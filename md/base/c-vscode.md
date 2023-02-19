@@ -1,5 +1,14 @@
 - # c-vscode
 
+- [在线调试](#在线调试)
+  - [插件](#插件)
+  - [配置](#配置)
+  - [gdb参数配置](#gdb参数配置)
+  - [gdb调试c及glibc源码](#gdb调试c及glibc源码)
+  - [vscode 阅读c及glibc源码](#vscode-阅读c及glibc源码)
+  - [vscode 在线调试c及glibc源码](#vscode-在线调试c及glibc源码)
+
+
 ## 在线调试
 [官方文档](https://code.visualstudio.com/docs/cpp/config-linux)  
 ### 插件
@@ -14,7 +23,35 @@ sudo apt-get install build-essential gdb
 ### 配置
 
 ```json
-
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "gdb debug c/cpp",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${fileDirname}/${fileBasenameNoExtension}",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${fileDirname}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "为 gdb 启用整齐打印",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+            ],
+            "sourceFileMap":{
+                // "remote": "local"
+                "/build/glibc-SzIz7B": "/usr/src/glibc" //需要下载glibc的源码文件，修改这里的配置
+            },
+            "preLaunchTask": "c-cpp-build"
+        }
+    ]
+}
 ```
 
 ### gdb参数配置
@@ -244,7 +281,7 @@ drwxr-xr-x  3 root root 4096 Feb 16 15:51 var
 
 <br>
 <div align=center>
-    <img src="../../res/image/glic-source.png" width="100%" height="40%"></img>  
+    <img src="../../res/image/glic-source.png" width="100%"></img>  
 </div>
 <br>
 
@@ -257,7 +294,14 @@ drwxr-xr-x  3 root root 4096 Feb 16 15:51 var
 ```
 
 
+最终调试的界面:
+<br>
+<div align=center>
+    <img src="../../res/image/vsdebug-1.png" width="100%"></img>  
+</div>
+<br>
 
+> 还需要注意，如果有其他依赖库，如何调试呢？还是需要确保依赖库`-g`拥有调试符号表.  
 
 
 
