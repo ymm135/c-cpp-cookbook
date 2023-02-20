@@ -16,6 +16,14 @@
   - [查看符号表`nm`](#查看符号表nm)
   - [列出动态链接库`ldd`](#列出动态链接库ldd)
 - [Makefile](#makefile)
+  - [入门](#入门-1)
+  - [makefile的规则](#makefile的规则)
+  - [示例](#示例)
+  - [make是如何工作的](#make是如何工作的)
+  - [makefile中使用变量](#makefile中使用变量)
+  - [让make自动推导](#让make自动推导)
+  - [清空目标文件的规则](#清空目标文件的规则)
+  - [make的工作方式](#make的工作方式)
 
 
 ## 简介
@@ -38,7 +46,7 @@ int main() {
 gcc hello.c
 ```
 
-> 默认输出可执行文件称为“ a.exe”（Windows）或“ a.out”（Unixes 和 Mac OS X）  
+> 默认输出可执行文件称为` a.exe`（Windows）或` a.out`（Unixes 和 Mac OS X）  
 
 ```sh
 $ chmod a+x a.out
@@ -87,10 +95,11 @@ gcc 与 g++ 分别是 gnu 的 c & c++ 编译器 gcc/g++ 在执行编译工作的
 
 - `-v`  选项查看详细的编译过程,调试时使用
 - `-g`  生成额外的符号调试信息以供gdb调试器使用
-- `-o`  指定输出的可执行文件名
+- `-o`  指定输出的可执行文件名 Place the output into <file>.
 - `-Wall`  打印全部警告信息
 - `-E`  只激活预处理,这个不生成文件, 你需要把它重定向到一个输出文件里面  `gcc -E test.c -o test.i`  
 - `-S`  只激活预处理和编译，就是指把文件编译成为汇编代码  
+- `-c`  Compile and assemble, but do not link.
 
 ### 编译过程
 
@@ -121,7 +130,7 @@ int main() {
 }
 ```
 
-由此可见，gcc确实进行了预处理，它把”stdio.h”的内容插入到hello.i文件中  
+由此可见，gcc确实进行了预处理，它把`stdio.h`的内容插入到hello.i文件中  
 
 增加`-v`参数，可以看到详细信息`gcc -E hello.c -o hello.i -v`    
 ```sh
@@ -149,7 +158,7 @@ LIBRARY_PATH=/usr/lib/gcc/x86_64-linux-gnu/9/:/usr/lib/gcc/x86_64-linux-gnu/9/..
 COLLECT_GCC_OPTIONS='-E' '-o' 'hello.i' '-v' '-mtune=generic' '-march=x86-64'
 ```
 #### 编译阶段  
-Gcc首先要检查代码的规范性、是否有语法错误等，以确定代码的实际要做的工作，在检查无误后，Gcc把代码翻译成汇编语言。用户可以使用”-S”选项来进行查看，该选项只进行编译而不进行汇编，生成汇编代码  
+Gcc首先要检查代码的规范性、是否有语法错误等，以确定代码的实际要做的工作，在检查无误后，Gcc把代码翻译成汇编语言。用户可以使用`-S`选项来进行查看，该选项只进行编译而不进行汇编，生成汇编代码  
 
 ```sh
 gcc -S hello.i -o hello.s
@@ -218,8 +227,8 @@ gcc -c hello.c -o hello.o
 可以重新查看这个小程序，在这个程序中并没有定义`printf`的函数实现，且在预编译中包含进的`stdio.h`中也只有该函数的声明，而没有定义函数的实现，那么，是在哪里实现`printf`函数的呢？答案是：系统把这些函数实现都被做到名为`libc.so.6`的库文件中去了，在没有特别指定时，Gcc会到系统默认的搜索路径`/usr/lib`下进行查找，也就是链接到`libc.so.6`库函数中去，这样就能实现函数`printf`了，而这也就是链接的作用。  
 
 函数库一般分为`静态库`和`动态库`两种:
-- `静态库`是指编译链接时，把库文件的代码全部加入到可执行文件中，因此生成的文件比较大，但在运行时也就不再需要库文件了。其后缀名一般为”.a”。  
-- `动态库`与之相反，在编译链接时并没有把库文件的代码加入到可执行文件中，而是在程序执行时由运行时链接文件加载库，这样可以节省系统的开销。动态库一般后缀名为”.so”，如前面所述的libc.so.6就是动态库。Gcc在编译时默认使用动态库。
+- `静态库`是指编译链接时，把库文件的代码全部加入到可执行文件中，因此生成的文件比较大，但在运行时也就不再需要库文件了。其后缀名一般为`.a`。  
+- `动态库`与之相反，在编译链接时并没有把库文件的代码加入到可执行文件中，而是在程序执行时由运行时链接文件加载库，这样可以节省系统的开销。动态库一般后缀名为`.so`，如前面所述的libc.so.6就是动态库。Gcc在编译时默认使用动态库。
 
 说下生成静态库的方法：  
 就是把file1.o和file2.o打包生成libxxx.a静态库  
@@ -256,8 +265,10 @@ gcc hello.o -o hello
 ```sh
 file hello.s 
 hello.s: assembler source, ASCII text
+
 $ file hello.o 
 hello.o: ELF 64-bit LSB relocatable, x86-64, version 1 (SYSV), not stripped
+
 $ file hello
 hello: ELF 64-bit LSB shared object, x86-64, version 1 (SYSV), dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, BuildID[sha1]=61598e48dc6550a995c3bc0a6ee539bf5263ea02, for GNU/Linux 3.2.0, not stripped
 ```
@@ -337,4 +348,240 @@ hello: ELF 64-bit LSB shared object, x86-64, version 1 (SYSV), dynamically linke
         /lib64/ld-linux-x86-64.so.2 (0x00007f1b7b04c000)
 ```
 
+`-v` 打印所有信息
+```sh
+ldd -v hello
+	linux-vdso.so.1 (0x00007ffd72ec9000)
+	libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007f66e657e000)
+	/lib64/ld-linux-x86-64.so.2 (0x00007f66e677f000)
+
+	Version information:
+	./hello:
+		libc.so.6 (GLIBC_2.2.5) => /lib/x86_64-linux-gnu/libc.so.6
+	/lib/x86_64-linux-gnu/libc.so.6:
+		ld-linux-x86-64.so.2 (GLIBC_2.3) => /lib64/ld-linux-x86-64.so.2
+		ld-linux-x86-64.so.2 (GLIBC_PRIVATE) => /lib64/ld-linux-x86-64.so.2
+```
+
 ## Makefile  
+make命令执行时，需要一个makefile文件，以告诉make命令需要怎么样的去编译和链接程序。  
+
+- ### [跟我一起写Makefile](https://seisman.github.io/how-to-write-makefile/index.html)  
+
+
+### 入门
+`Makefile`
+```makefile
+all: hello
+
+hello: hello.o
+	 gcc -o hello hello.o
+
+hello.o: hello.c
+	 gcc -c hello.c
+     
+clean:
+	 rm hello.o hello
+```
+
+执行
+```sh
+$ make
+gcc -c hello.c
+gcc -o hello hello.o
+```
+
+### makefile的规则
+
+```sh
+target ... : prerequisites ...
+    command
+    ...
+    ...
+```
+
+- `target`  可以是一个object file（目标文件），也可以是一个执行文件，还可以是一个标签（label）。对于标签这种特性，在后续的`伪目标`章节中会有叙述。  
+- `prerequisites`  生成该target所依赖的文件和/或target
+- `command`  该target要执行的命令（任意的shell命令）
+  
+这是一个文件的依赖关系，也就是说，target这一个或多个的目标文件依赖于prerequisites中的文件，其生成规则定义在command中。说白一点就是说:  
+> prerequisites中如果有一个以上的文件比target文件要新的话，command所定义的命令就会被执行。
+
+这就是makefile的规则，也就是makefile中最核心的内容。  
+
+
+### 示例  
+如果一个工程有`3`个头文件和`8`个c文件，为了完成前面所述的那三个规则，我们的makefile 应该是下面的这个样子的。  
+
+```makefile
+edit : main.o kbd.o command.o display.o \
+        insert.o search.o files.o utils.o
+    cc -o edit main.o kbd.o command.o display.o \
+        insert.o search.o files.o utils.o
+
+main.o : main.c defs.h
+    cc -c main.c
+kbd.o : kbd.c defs.h command.h
+    cc -c kbd.c
+command.o : command.c defs.h command.h
+    cc -c command.c
+display.o : display.c defs.h buffer.h
+    cc -c display.c
+insert.o : insert.c defs.h buffer.h
+    cc -c insert.c
+search.o : search.c defs.h buffer.h
+    cc -c search.c
+files.o : files.c defs.h buffer.h command.h
+    cc -c files.c
+utils.o : utils.c defs.h
+    cc -c utils.c
+clean :
+    rm edit main.o kbd.o command.o display.o \
+        insert.o search.o files.o utils.o
+```
+
+> 反斜杠（ \ ）是换行符的意思,这样比较便于makefile的阅读  
+
+我们可以把这个内容保存在名字为`makefile`或`Makefile`的文件中，然后在该目录下直接输入命令 `make` 就可以生成执行文件 `edit`。如果要删除执行文件和所有的中间目标文件，那么，只要简单地执行一下 `make clean` 就可以了 
+
+后续的那一行定义了如何生成目标文件的操作系统命令，一定要以一个 `Tab` 键作为开头。记住，make并不管命令是怎么工作的，他只管执行所定义的命令。make会比较targets文件和prerequisites文件的修改日期，如果prerequisites文件的日期要比targets文件的日期要新，或者target不存在的话，那么，make就会执行后续定义的命令  
+
+> 如果把`Tab`换成四个空格，会报错`Makefile:4: *** missing separator.  Stop.`  
+
+### make是如何工作的
+
+在默认的方式下，也就是我们只输入 make 命令。那么，
+
+1. make会在当前目录下找名字叫`Makefile`或`makefile`的文件。
+
+2. 如果找到，它会找文件中的第一个目标文件（`target`），在上面的例子中，他会找到`edit`这个文件，并把这个文件作为最终的目标文件。
+
+3. 如果`edit`文件不存在，或是edit所依赖的后面的 `.o` 文件的文件修改时间要比 `edit` 这个文件新，那么，他就会执行后面所定义的命令来生成 `edit` 这个文件。
+
+4. 如果 `edit` 所依赖的 `.o` 文件也不存在，那么make会在当前文件中找目标为 `.o` 文件的依赖性，如果找到则再根据那一个规则生成 `.o` 文件。（这有点像一个堆栈的过程）
+
+当然，你的C文件和H文件是存在的啦，于是make会生成 `.o` 文件，然后再用 .o 文件生成make的终极任务，也就是执行文件 `edit` 了。  
+
+这就是整个make的依赖性，make会一层又一层地去找文件的依赖关系，直到最终编译出第一个目标文件。在找寻的过程中，如果出现错误，比如最后被依赖的文件找不到，那么make就会直接退出，并报错  
+
+### makefile中使用变量
+
+在上面的例子中，先让我们看看edit的规则：  
+```makefile
+edit : main.o kbd.o command.o display.o \
+        insert.o search.o files.o utils.o
+    cc -o edit main.o kbd.o command.o display.o \
+        insert.o search.o files.o utils.o
+```
+
+我们可以看到 `.o` 文件的字符串被重复了两次，如果我们的工程需要加入一个新的 `.o` 文件，那么我们需要在两个地方加（应该是三个地方，还有一个地方在clean中）。当然，我们的makefile并不复杂，所以在两个地方加也不累，但如果makefile变得复杂，那么我们就有可能会忘掉一个需要加入的地方，而导致编译失败。所以，为了makefile的易维护，在makefile中我们可以使用变量。makefile的变量也就是一个字符串，理解成C语言中的宏可能会更好。  
+
+比如，我们声明一个变量，叫 `objects` ， `OBJECTS` ， `objs` ， `OBJS` ， `obj` 或是 `OBJ` ，反正不管什么啦，只要能够表示obj文件就行了。我们在makefile一开始就这样定义：  
+
+```makefile
+objects = main.o kbd.o command.o display.o \
+     insert.o search.o files.o utils.o
+```
+
+于是，我们就可以很方便地在我们的makefile中以 `$(objects)` 的方式来使用这个变量了，于是我们的改良版makefile就变成下面这个样子：
+```makefile
+objects = main.o kbd.o command.o display.o \
+    insert.o search.o files.o utils.o
+
+edit : $(objects)
+    cc -o edit $(objects)
+main.o : main.c defs.h
+    cc -c main.c
+kbd.o : kbd.c defs.h command.h
+    cc -c kbd.c
+command.o : command.c defs.h command.h
+    cc -c command.c
+display.o : display.c defs.h buffer.h
+    cc -c display.c
+insert.o : insert.c defs.h buffer.h
+    cc -c insert.c
+search.o : search.c defs.h buffer.h
+    cc -c search.c
+files.o : files.c defs.h buffer.h command.h
+    cc -c files.c
+utils.o : utils.c defs.h
+    cc -c utils.c
+clean :
+    rm edit $(objects)
+```
+
+于是如果有新的 `.o` 文件加入，我们只需简单地修改一下 `objects` 变量就可以了。  
+
+### 让make自动推导
+GNU的make很强大，它可以自动推导文件以及文件依赖关系后面的命令，于是我们就没必要去在每一个 `.o` 文件后都写上类似的命令，因为，我们的make会自动识别，并自己推导命令。
+
+只要make看到一个 `.o` 文件，它就会自动的把 `.c` 文件加在依赖关系中，如果make找到一个 `whatever.o` ，那么 `whatever.c` 就会是 `whatever.o` 的依赖文件。并且 `cc -c whatever.c` 也会被推导出来，于是，我们的makefile再也不用写得这么复杂。我们的新makefile又出炉了。
+```makefile
+objects = main.o kbd.o command.o display.o \
+    insert.o search.o files.o utils.o
+
+edit : $(objects)
+    cc -o edit $(objects)
+
+main.o : defs.h
+kbd.o : defs.h command.h
+command.o : defs.h command.h
+display.o : defs.h buffer.h
+insert.o : defs.h buffer.h
+search.o : defs.h buffer.h
+files.o : defs.h buffer.h command.h
+utils.o : defs.h
+
+.PHONY : clean
+clean :
+    rm edit $(objects)
+```
+
+> `.PHONY` 表示 `clean` 是个伪目标文件  
+
+### 清空目标文件的规则
+每个Makefile中都应该写一个清空目标文件（ `.o` 和执行文件）的规则，这不仅便于重编译，也很利于保持文件的清洁。这是一个“修养”,一般的风格都是：
+```makefile
+clean:
+    rm edit $(objects)
+```
+更为稳健的做法是：  
+```makefile
+.PHONY : clean
+clean :
+    -rm edit $(objects)
+```
+前面说过， `.PHONY` 表示 `clean` 是一个`伪目标`。而在 `rm` 命令前面加了一个小减号的意思就是，也许某些文件出现问题，但不要管，继续做后面的事。当然， clean 的规则不要放在文件的开头，不然，这就会变成make的默认目标，相信谁也不愿意这样。不成文的规矩是——“clean从来都是放在文件的最后”。  
+
+### make的工作方式
+GNU的make工作时的执行步骤如下：（其它的make也是类似）
+
+1. 读入所有的Makefile。
+2. 读入被include的其它Makefile。
+3. 初始化文件中的变量。
+4. 推导隐晦规则，并分析所有规则。
+5. 为所有的目标文件创建依赖关系链。
+6. 根据依赖关系，决定哪些目标要重新生成。
+7. 执行生成命令。
+
+1-5步为第一个阶段，6-7为第二个阶段。第一个阶段中，如果定义的变量被使用了，那么，make会把其展开在使用的位置。但make并不会完全马上展开，make使用的是拖延战术，如果变量出现在依赖关系的规则中，那么仅当这条依赖被决定要使用了，变量才会在其内部展开。
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
