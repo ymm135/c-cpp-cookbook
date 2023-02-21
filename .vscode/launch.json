@@ -18,6 +18,11 @@
                     "text": "-enable-pretty-printing",
                     "ignoreFailures": true
                 },
+                {
+                    "description": "att 汇编"
+                    "text": "set disassembly-flavor intel",
+                    "ignoreFailures": false
+                }
             ],
             "sourceFileMap":{
                 // "remote": "local"

@@ -55,6 +55,8 @@ sudo apt-get install build-essential gdb
 ```
 
 ### gdb参数配置
+- ### [100个gdb小技巧](https://wizardforcel.gitbooks.io/100-gdb-tips/content/print-large-array.html)  
+
 汇编格式配置
 ```json
 {
@@ -81,6 +83,12 @@ gdb执行效果
 (gdb) directory /usr/src/glibc/glibc-2.31
 Source directories searched: /usr/src/glibc/glibc-2.31:$cdir:$cwd
 ```
+
+查看内存信息`x/nfu addr`  
+gdb中使用“x”命令来打印内存的值，格式为“x/nfu addr”。含义为以f格式打印从addr开始的n个长度单元为u的内存值。参数具体含义如下：
+a）n：输出单元的个数。
+b）f：是输出格式。比如x是以16进制形式输出，o是以8进制形式输出,等等。  
+c）u：标明一个单元的长度。b是一个byte，h是两个byte（halfword），w是四个byte（word），g是八个byte（giant word）。
 
 ### gdb调试c及glibc源码
 
@@ -292,6 +300,11 @@ drwxr-xr-x  3 root root 4096 Feb 16 15:51 var
                 "/build/glibc-SzIz7B": "/usr/src/glibc" //需要下载glibc的源码文件，修改这里的配置
             },
 ```
+
+调试过程中会遇到`<optimized out>`  
+
+添加编译选项`-O0`，意思是不进行编译优化，gdb在默认情况下会使用`-O2`。
+使用-O0选项调试的时候就会顺畅了,发布项目的时候不用再使用 -O0参数项，gcc 默认编译或加上-O2优化编译会提高程序运行速度。在muduo源码中使用-O2选项，调试的时候对其Makefile进行修改即可。
 
 
 最终调试的界面:
