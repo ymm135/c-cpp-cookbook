@@ -5,8 +5,8 @@
             "label": "c-cpp-build",
             "command": "/usr/bin/gcc",
             "args": [
-                // "-v",
-                "-g",
+                // "-v", // 打印所有信息  
+                "-g3",  // 默认是-g2, g3用于宏调试
                 "-O0",
                 "${file}",
                 "-o",

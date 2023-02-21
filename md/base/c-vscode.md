@@ -1,5 +1,5 @@
 - # c-vscode
-
+  
 - [在线调试](#在线调试)
   - [插件](#插件)
   - [配置](#配置)
@@ -7,7 +7,7 @@
   - [gdb调试c及glibc源码](#gdb调试c及glibc源码)
   - [vscode 阅读c及glibc源码](#vscode-阅读c及glibc源码)
   - [vscode 在线调试c及glibc源码](#vscode-在线调试c及glibc源码)
-
+  - [patchelf 切换bin文件的libc版本](#patchelf-切换bin文件的libc版本)
 
 ## 在线调试
 [官方文档](https://code.visualstudio.com/docs/cpp/config-linux)  
@@ -82,6 +82,11 @@ gdb执行效果
 ```sh
 (gdb) directory /usr/src/glibc/glibc-2.31
 Source directories searched: /usr/src/glibc/glibc-2.31:$cdir:$cwd
+```
+
+也可以在gdb配置中增加参数:  
+```sh
+
 ```
 
 查看内存信息`x/nfu addr`  
@@ -242,7 +247,7 @@ cd /usr/src/glibc/glibc-2.31
 mkdir build && cd build
 mkdir /usr/local/glibc
 apt install bison -y # 安装依赖
-CFLAG="-g -O0" ../configure --prefix=/usr/local/glibc
+CFLAG="-g -g3 -ggdb -gdwarf-4 -Og -Wno-error -fno-stack-protector" ../configure --prefix=/usr/local/glibc
 make -j4
 ```
 
@@ -270,6 +275,12 @@ drwxr-xr-x  3 root root 4096 Feb 16 15:51 libexec
 drwxr-xr-x  2 root root 4096 Feb 16 15:51 sbin
 drwxr-xr-x  4 root root 4096 Feb 16 15:51 share
 drwxr-xr-x  3 root root 4096 Feb 16 15:51 var
+```
+
+> 直接替换系统的libc库，没有成功，可以使用gdb切换库  
+
+```sh
+set env LD_LIBRARY_PATH=/usr/local/glibc/lib
 ```
 
 这就需要替换了，之前`libc.so.6 -> libc-2.31.so`,直接拷贝`cp /usr/src/glibc/glibc-2.31/build/libc.so /usr/lib/x86_64-linux-gnu/libc.so.6`  
@@ -315,6 +326,24 @@ drwxr-xr-x  3 root root 4096 Feb 16 15:51 var
 <br>
 
 > 还需要注意，如果有其他依赖库，如何调试呢？还是需要确保依赖库`-g`拥有调试符号表.  
+
+
+### patchelf 切换bin文件的libc版本 
+
+```sh
+apt install patchelf
+```
+
+改变链接器+改变搜索路径
+```sh
+# 替换ld 
+patchelf --set-interpreter /usr/local/glibc/lib/ld-2.31.so target_file
+
+# 替换libc 
+patchelf --replace-needed libc.so.6 /usr/local/glibc/lib/libc-2.31.so target_file
+```
+
+`target_file` 就是目标的bin文件  
 
 
 
