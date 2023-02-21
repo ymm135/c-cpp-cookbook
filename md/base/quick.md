@@ -68,6 +68,57 @@ int main(void)
 </div>
 <br>
 
+### 重定向  
+`重定向`(relocations), 简单来说就是二进制文件中留下的"坑", 预留给外部变量或函数.  
+这里的变量和函数统称为`符号`(symbols). 在编译期我们通常只知道外部符号的类型
+(变量类型和函数原型), 而不需要知道具体的值(变量值和函数实现). 而这些预留的"坑",
+会在用到之前(链接期间或者运行期间)填上. 在链接期间填上主要通过工具链中的连接器,
+比如GNU链接器`ld`; 在运行期间填上则通过动态连接器, 或者说解释器(interpreter)来实现.  
+
+首先查看一下动态符号表`objdump -T main`  
+```sh
+objdump -T main
+
+main:     file format elf64-x86-64
+
+DYNAMIC SYMBOL TABLE:
+0000000000000000  w   D  *UND*	0000000000000000              _ITM_deregisterTMCloneTable
+0000000000000000      DF *UND*	0000000000000000  GLIBC_2.4   __stack_chk_fail
+0000000000000000      DF *UND*	0000000000000000  GLIBC_2.2.5 printf
+0000000000000000      DF *UND*	0000000000000000  GLIBC_2.2.5 __libc_start_main
+0000000000000000  w   D  *UND*	0000000000000000              __gmon_start__
+0000000000000000      DF *UND*	0000000000000000  GLIBC_2.7   __isoc99_scanf
+0000000000000000  w   D  *UND*	0000000000000000              _ITM_registerTMCloneTable
+0000000000000000  w   DF *UND*	0000000000000000  GLIBC_2.2.5 __cxa_finalize
+```
+
+查看一下plt表  
+```sh
+$ objdump -M intel -d -j .plt main
+
+main:     file format elf64-x86-64
+
+
+Disassembly of section .plt:
+
+0000000000001020 <.plt>:
+    1020:	ff 35 8a 2f 00 00    	push   QWORD PTR [rip+0x2f8a]        # 3fb0 <_GLOBAL_OFFSET_TABLE_+0x8>
+    1026:	f2 ff 25 8b 2f 00 00 	bnd jmp QWORD PTR [rip+0x2f8b]        # 3fb8 <_GLOBAL_OFFSET_TABLE_+0x10>
+    102d:	0f 1f 00             	nop    DWORD PTR [rax]
+    1030:	f3 0f 1e fa          	endbr64 
+    1034:	68 00 00 00 00       	push   0x0
+    1039:	f2 e9 e1 ff ff ff    	bnd jmp 1020 <.plt>
+    103f:	90                   	nop
+    1040:	f3 0f 1e fa          	endbr64 
+    1044:	68 01 00 00 00       	push   0x1
+    1049:	f2 e9 d1 ff ff ff    	bnd jmp 1020 <.plt>
+    104f:	90                   	nop
+    1050:	f3 0f 1e fa          	endbr64 
+    1054:	68 02 00 00 00       	push   0x2
+    1059:	f2 e9 c1 ff ff ff    	bnd jmp 1020 <.plt>
+    105f:	90                   	nop
+```
+
 查看汇编`-exec disassemble /m`
 ```sh
 5	  //initialize vars
@@ -88,30 +139,31 @@ int main(void)
    0x00005555555551c8 <+63>:	call   0x555555555090 <__isoc99_scanf@plt>  # Call Procedure
 ```
 
-`%s`存储位置`0x55555555601c`  
-```sh
--exec x/16cb 0x55555555601c
-0x55555555601c:	37 '%'	115 's'	0 '\000'	69 'E'	110 'n'	116 't'	101 'e'	114 'r'
-0x555555556024:	32 ' '	121 'y'	111 'o'	117 'u'	114 'r'	32 ' '	108 'l'	97 'a'
-```
-
-查看`0x555555555090 <__isoc99_scanf@plt>`  
-```sh
--exec x/16cb 0x555555555090
-0x555555555090 <__isoc99_scanf@plt>:	-13 '\363'	15 '\017'	30 '\036'	-6 '\372'	-14 '\362'	-1 '\377'	37 '%'	53 '5'
-0x555555555098 <__isoc99_scanf@plt+8>:	47 '/'	0 '\000'	0 '\000'	15 '\017'	31 '\037'	68 'D'	0 '\000'	0 '\000'
-```
-
-查看地址内容`disas 0x555555555090`
+查看地址内容`0x555555555090 <__isoc99_scanf@plt>`
 ```sh
 -exec disas 0x555555555090
 Dump of assembler code for function __isoc99_scanf@plt:
    0x0000555555555090 <+0>:	endbr64 
-   0x0000555555555094 <+4>:	bnd jmp QWORD PTR [rip+0x2f35]        # 0x555555557fd0 <__isoc99_scanf@got.plt>
+   0x0000555555555094 <+4>:	bnd jmp QWORD PTR [rip+0x2f35]        # 0x555555557fd0 <__isoc99_scanf@got.plt>    # jmp 无条件跳转
    0x000055555555509b <+11>:	nop    DWORD PTR [rax+rax*1+0x0]
 End of assembler dump.
+```
 
+查看`0x555555557fd0 <__isoc99_scanf@got.plt>`
+```
 -exec disas 0x555555557fd0
+Dump of assembler code for function __isoc99_scanf@got.plt:
+   0x0000555555557fd0 <+0>:	mov    al,0x20
+   0x0000555555557fd2 <+2>:	jrcxz  0x555555557fcb <printf@got.plt+3>        # RCX=0 跳转
+   0x0000555555557fd4 <+4>:	(bad)  
+   0x0000555555557fd5 <+5>:	jg     0x555555557fd7 <__isoc99_scanf@got.plt+7> # 大于跳转  
+   0x0000555555557fd7 <+7>:	add    BYTE PTR [rax],al
+End of assembler dump.
+```
+
+查看`0x555555557fd7 <__isoc99_scanf@got.plt+7>`  
+```sh
+-exec disas 0x555555557fd7
 Dump of assembler code for function __isoc99_scanf@got.plt:
    0x0000555555557fd0 <+0>:	mov    al,0x20
    0x0000555555557fd2 <+2>:	jrcxz  0x555555557fcb <printf@got.plt+3>
@@ -121,11 +173,70 @@ Dump of assembler code for function __isoc99_scanf@got.plt:
 End of assembler dump.
 ```
 
--exec x/32xb 0x555555557fd0
-0x555555557fd0 <__isoc99_scanf@got.plt>:	0xb0	0x20	0xe3	0xf7	0xff	0x7f	0x00	0x00
-0x555555557fd8:	0x00	0x00	0x00	0x00	0x00	0x00	0x00	0x00
-0x555555557fe0:	0x90	0x2f	0xdf	0xf7	0xff	0x7f	0x00	0x00
-0x555555557fe8:	0x00	0x00	0x00	0x00	0x00	0x00	0x00	0x00
+在其中没有看到got指向最终glibc中scanf的实现。但是可以通过objdump 反汇编查看`objdump -d  main`
+```sh
+0000000000001189 <main>:
+    11c3:   b8 00 00 00 00          mov    $0x0,%eax
+    11c8:   e8 c3 fe ff ff          callq  1090 <__isoc99_scanf@plt>
+
+0000000000001090 <__isoc99_scanf@plt>:
+    1090:   f3 0f 1e fa             endbr64 
+    1094:   f2 ff 25 35 2f 00 00    bnd jmpq *0x2f35(%rip)        # 3fd0 <__isoc99_scanf@GLIBC_2.7>
+    109b:   0f 1f 44 00 00          nopl   0x0(%rax,%rax,1)
+```
+
+`objdump`查看一下got表  
+```sh
+Sections:
+Idx Name          Size      VMA               LMA               File off  Algn
+ 12 .plt          00000040  0000000000001020  0000000000001020  00001020  2**4
+                  CONTENTS, ALLOC, LOAD, READONLY, CODE
+ 13 .plt.got      00000010  0000000000001060  0000000000001060  00001060  2**4
+                  CONTENTS, ALLOC, LOAD, READONLY, CODE
+ 14 .plt.sec      00000030  0000000000001070  0000000000001070  00001070  2**4
+                  CONTENTS, ALLOC, LOAD, READONLY, CODE
+ 22 .dynamic      000001f0  0000000000003db8  0000000000003db8  00002db8  2**3
+                  CONTENTS, ALLOC, LOAD, DATA
+ 23 .got          00000058  0000000000003fa8  0000000000003fa8  00002fa8  2**3
+                  CONTENTS, ALLOC, LOAD, DATA
+ 24 .data         00000010  0000000000004000  0000000000004000  00003000  2**3
+                  CONTENTS, ALLOC, LOAD, DATA
+```
+
+查看.got的内容`objdump -M intel -d -j .got main`
+```sh
+objdump -M intel -d -j .got main
+
+main:     file format elf64-x86-64
+
+
+Disassembly of section .got:
+
+0000000000003fa8 <_GLOBAL_OFFSET_TABLE_>:
+    3fa8:	b8 3d 00 00 00 00 00 00 00 00 00 00 00 00 00 00     .=..............
+	...
+    3fc0:	30 10 00 00 00 00 00 00 40 10 00 00 00 00 00 00     0.......@.......
+    3fd0:	50 10 00 00 00 00 00 00 00 00 00 00 00 00 00 00     P...............
+	...
+```
+
+`-exec disass __isoc99_scanf`
+```sh
+-exec disass __isoc99_scanf
+Dump of assembler code for function __isoc99_scanf:
+   0x00007ffff7e320b0 <+0>:	endbr64 
+   0x00007ffff7e320b4 <+4>:	sub    rsp,0xd8
+   0x00007ffff7e320bb <+11>:	mov    r10,rdi
+   0x00007ffff7e320be <+14>:	mov    QWORD PTR [rsp+0x28],rsi
+   0x00007ffff7e320c3 <+19>:	mov    QWORD PTR [rsp+0x30],rdx
+   0x00007ffff7e320c8 <+24>:	mov    QWORD PTR [rsp+0x38],rcx
+   0x00007ffff7e320cd <+29>:	mov    QWORD PTR [rsp+0x40],r8
+   0x00007ffff7e320d2 <+34>:	mov    QWORD PTR [rsp+0x48],r9
+   0x00007ffff7e320d7 <+39>:	test   al,al
+   0x00007ffff7e320d9 <+41>:	je     0x7ffff7e32112 <__isoc99_scanf+98>
+```
+`__isoc99_scanf`地址为:`0x00007ffff7e320b0`  
+
 
 目前发现call调用时，调用流程是`call scanf —> scanf的plt表 —>scanf的got表`  
 

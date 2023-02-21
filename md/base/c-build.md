@@ -363,6 +363,310 @@ ldd -v hello
 		ld-linux-x86-64.so.2 (GLIBC_PRIVATE) => /lib64/ld-linux-x86-64.so.2
 ```
 
+### `objdump`
+- `-x`  --all-headers        Display the contents of all headers
+- `-t`  --syms               Display the contents of the symbol table(s)
+- `-T`  -T, --dynamic-syms       Display the contents of the dynamic symbol table
+- `-d`  --disassemble        Display assembler contents of executable sections
+- `-D`  --disassemble-all    Display assembler contents of all sections
+- `-g`  --debugging          Display debug information in object file
+- `-M`  with the -M switch (multiple options should be separated by commas):  `att         Display instruction in AT&T syntax`,`intel       Display instruction in Intel syntax`
+
+查看intel汇编`objdump -M intel -d hello.o`
+```sh
+hello.o:     file format elf64-x86-64
+
+
+Disassembly of section .text:
+
+0000000000000000 <main>:
+   0:	f3 0f 1e fa          	endbr64 
+   4:	55                   	push   rbp
+   5:	48 89 e5             	mov    rbp,rsp
+   8:	48 8d 3d 00 00 00 00 	lea    rdi,[rip+0x0]        # f <main+0xf>
+   f:	e8 00 00 00 00       	call   14 <main+0x14>
+  14:	b8 00 00 00 00       	mov    eax,0x0
+  19:	5d                   	pop    rbp
+  1a:	c3                   	ret   
+```
+
+还没有链接地
+
+调试表`objdump -g hello.o`  
+```sh
+hello.o:     file format elf64-x86-64
+
+Contents of the .eh_frame section (loaded from hello.o):
+
+
+00000000 0000000000000014 00000000 CIE
+  Version:               1
+  Augmentation:          "zR"
+  Code alignment factor: 1
+  Data alignment factor: -8
+  Return address column: 16
+  Augmentation data:     1b
+  DW_CFA_def_cfa: r7 (rsp) ofs 8
+  DW_CFA_offset: r16 (rip) at cfa-8
+  DW_CFA_nop
+  DW_CFA_nop
+
+00000018 000000000000001c 0000001c FDE cie=00000000 pc=0000000000000000..000000000000001b
+  DW_CFA_advance_loc: 5 to 0000000000000005
+  DW_CFA_def_cfa_offset: 16
+  DW_CFA_offset: r6 (rbp) at cfa-16
+  DW_CFA_advance_loc: 3 to 0000000000000008
+  DW_CFA_def_cfa_register: r6 (rbp)
+  DW_CFA_advance_loc: 18 to 000000000000001a
+  DW_CFA_def_cfa: r7 (rsp) ofs 8
+  DW_CFA_nop
+  DW_CFA_nop
+  DW_CFA_nop
+```
+
+头文件`objdump -x hello.o`  
+```sh
+hello.o:     file format elf64-x86-64
+hello.o
+architecture: i386:x86-64, flags 0x00000011:
+HAS_RELOC, HAS_SYMS
+start address 0x0000000000000000
+
+Sections:
+Idx Name          Size      VMA               LMA               File off  Algn
+  0 .text         0000001b  0000000000000000  0000000000000000  00000040  2**0
+                  CONTENTS, ALLOC, LOAD, RELOC, READONLY, CODE
+  1 .data         00000000  0000000000000000  0000000000000000  0000005b  2**0
+                  CONTENTS, ALLOC, LOAD, DATA
+  2 .bss          00000000  0000000000000000  0000000000000000  0000005b  2**0
+                  ALLOC
+  3 .rodata       0000000e  0000000000000000  0000000000000000  0000005b  2**0
+                  CONTENTS, ALLOC, LOAD, READONLY, DATA
+  4 .comment      0000002c  0000000000000000  0000000000000000  00000069  2**0
+                  CONTENTS, READONLY
+  5 .note.GNU-stack 00000000  0000000000000000  0000000000000000  00000095  2**0
+                  CONTENTS, READONLY
+  6 .note.gnu.property 00000020  0000000000000000  0000000000000000  00000098  2**3
+                  CONTENTS, ALLOC, LOAD, READONLY, DATA
+  7 .eh_frame     00000038  0000000000000000  0000000000000000  000000b8  2**3
+                  CONTENTS, ALLOC, LOAD, RELOC, READONLY, DATA
+SYMBOL TABLE:
+0000000000000000 l    df *ABS*	0000000000000000 hello.c
+0000000000000000 l    d  .text	0000000000000000 .text
+0000000000000000 l    d  .data	0000000000000000 .data
+0000000000000000 l    d  .bss	0000000000000000 .bss
+0000000000000000 l    d  .rodata	0000000000000000 .rodata
+0000000000000000 l    d  .note.GNU-stack	0000000000000000 .note.GNU-stack
+0000000000000000 l    d  .note.gnu.property	0000000000000000 .note.gnu.property
+0000000000000000 l    d  .eh_frame	0000000000000000 .eh_frame
+0000000000000000 l    d  .comment	0000000000000000 .comment
+0000000000000000 g     F .text	000000000000001b main
+0000000000000000         *UND*	0000000000000000 _GLOBAL_OFFSET_TABLE_
+0000000000000000         *UND*	0000000000000000 puts
+
+
+RELOCATION RECORDS FOR [.text]:
+OFFSET           TYPE              VALUE 
+000000000000000b R_X86_64_PC32     .rodata-0x0000000000000004
+0000000000000010 R_X86_64_PLT32    puts-0x0000000000000004
+
+
+RELOCATION RECORDS FOR [.eh_frame]:
+OFFSET           TYPE              VALUE 
+0000000000000020 R_X86_64_PC32     .text
+```
+
+链接后的文件`objdump -x hello`  
+```sh
+hello:     file format elf64-x86-64
+hello
+architecture: i386:x86-64, flags 0x00000150:
+HAS_SYMS, DYNAMIC, D_PAGED
+start address 0x0000000000001060
+
+Program Header:
+    PHDR off    0x0000000000000040 vaddr 0x0000000000000040 paddr 0x0000000000000040 align 2**3
+         filesz 0x00000000000002d8 memsz 0x00000000000002d8 flags r--
+  INTERP off    0x0000000000000318 vaddr 0x0000000000000318 paddr 0x0000000000000318 align 2**0
+         filesz 0x000000000000001c memsz 0x000000000000001c flags r--
+    LOAD off    0x0000000000000000 vaddr 0x0000000000000000 paddr 0x0000000000000000 align 2**12
+         filesz 0x00000000000005f8 memsz 0x00000000000005f8 flags r--
+    LOAD off    0x0000000000001000 vaddr 0x0000000000001000 paddr 0x0000000000001000 align 2**12
+         filesz 0x00000000000001f5 memsz 0x00000000000001f5 flags r-x
+    LOAD off    0x0000000000002000 vaddr 0x0000000000002000 paddr 0x0000000000002000 align 2**12
+         filesz 0x0000000000000160 memsz 0x0000000000000160 flags r--
+    LOAD off    0x0000000000002db8 vaddr 0x0000000000003db8 paddr 0x0000000000003db8 align 2**12
+         filesz 0x0000000000000258 memsz 0x0000000000000260 flags rw-
+ DYNAMIC off    0x0000000000002dc8 vaddr 0x0000000000003dc8 paddr 0x0000000000003dc8 align 2**3
+         filesz 0x00000000000001f0 memsz 0x00000000000001f0 flags rw-
+    NOTE off    0x0000000000000338 vaddr 0x0000000000000338 paddr 0x0000000000000338 align 2**3
+         filesz 0x0000000000000020 memsz 0x0000000000000020 flags r--
+    NOTE off    0x0000000000000358 vaddr 0x0000000000000358 paddr 0x0000000000000358 align 2**2
+         filesz 0x0000000000000044 memsz 0x0000000000000044 flags r--
+0x6474e553 off    0x0000000000000338 vaddr 0x0000000000000338 paddr 0x0000000000000338 align 2**3
+         filesz 0x0000000000000020 memsz 0x0000000000000020 flags r--
+EH_FRAME off    0x0000000000002014 vaddr 0x0000000000002014 paddr 0x0000000000002014 align 2**2
+         filesz 0x0000000000000044 memsz 0x0000000000000044 flags r--
+   STACK off    0x0000000000000000 vaddr 0x0000000000000000 paddr 0x0000000000000000 align 2**4
+         filesz 0x0000000000000000 memsz 0x0000000000000000 flags rw-
+   RELRO off    0x0000000000002db8 vaddr 0x0000000000003db8 paddr 0x0000000000003db8 align 2**0
+         filesz 0x0000000000000248 memsz 0x0000000000000248 flags r--
+
+Dynamic Section:
+  NEEDED               libc.so.6
+  INIT                 0x0000000000001000
+  FINI                 0x00000000000011e8
+  INIT_ARRAY           0x0000000000003db8
+  INIT_ARRAYSZ         0x0000000000000008
+  FINI_ARRAY           0x0000000000003dc0
+  FINI_ARRAYSZ         0x0000000000000008
+  GNU_HASH             0x00000000000003a0
+  STRTAB               0x0000000000000470
+  SYMTAB               0x00000000000003c8
+  STRSZ                0x0000000000000082
+  SYMENT               0x0000000000000018
+  DEBUG                0x0000000000000000
+  PLTGOT               0x0000000000003fb8
+  PLTRELSZ             0x0000000000000018
+  PLTREL               0x0000000000000007
+  JMPREL               0x00000000000005e0
+  RELA                 0x0000000000000520
+  RELASZ               0x00000000000000c0
+  RELAENT              0x0000000000000018
+  FLAGS                0x0000000000000008
+  FLAGS_1              0x0000000008000001
+  VERNEED              0x0000000000000500
+  VERNEEDNUM           0x0000000000000001
+  VERSYM               0x00000000000004f2
+  RELACOUNT            0x0000000000000003
+
+Version References:
+  required from libc.so.6:
+    0x09691a75 0x00 02 GLIBC_2.2.5
+
+Sections:
+Idx Name          Size      VMA               LMA               File off  Algn
+  0 .interp       0000001c  0000000000000318  0000000000000318  00000318  2**0
+                  CONTENTS, ALLOC, LOAD, READONLY, DATA
+  1 .note.gnu.property 00000020  0000000000000338  0000000000000338  00000338  2**3
+                  CONTENTS, ALLOC, LOAD, READONLY, DATA
+  2 .note.gnu.build-id 00000024  0000000000000358  0000000000000358  00000358  2**2
+                  CONTENTS, ALLOC, LOAD, READONLY, DATA
+  3 .note.ABI-tag 00000020  000000000000037c  000000000000037c  0000037c  2**2
+                  CONTENTS, ALLOC, LOAD, READONLY, DATA
+  4 .gnu.hash     00000024  00000000000003a0  00000000000003a0  000003a0  2**3
+                  CONTENTS, ALLOC, LOAD, READONLY, DATA
+  5 .dynsym       000000a8  00000000000003c8  00000000000003c8  000003c8  2**3
+                  CONTENTS, ALLOC, LOAD, READONLY, DATA
+  6 .dynstr       00000082  0000000000000470  0000000000000470  00000470  2**0
+                  CONTENTS, ALLOC, LOAD, READONLY, DATA
+  7 .gnu.version  0000000e  00000000000004f2  00000000000004f2  000004f2  2**1
+                  CONTENTS, ALLOC, LOAD, READONLY, DATA
+  8 .gnu.version_r 00000020  0000000000000500  0000000000000500  00000500  2**3
+                  CONTENTS, ALLOC, LOAD, READONLY, DATA
+  9 .rela.dyn     000000c0  0000000000000520  0000000000000520  00000520  2**3
+                  CONTENTS, ALLOC, LOAD, READONLY, DATA
+ 10 .rela.plt     00000018  00000000000005e0  00000000000005e0  000005e0  2**3
+                  CONTENTS, ALLOC, LOAD, READONLY, DATA
+ 11 .init         0000001b  0000000000001000  0000000000001000  00001000  2**2
+                  CONTENTS, ALLOC, LOAD, READONLY, CODE
+ 12 .plt          00000020  0000000000001020  0000000000001020  00001020  2**4
+                  CONTENTS, ALLOC, LOAD, READONLY, CODE
+ 13 .plt.got      00000010  0000000000001040  0000000000001040  00001040  2**4
+                  CONTENTS, ALLOC, LOAD, READONLY, CODE
+ 14 .plt.sec      00000010  0000000000001050  0000000000001050  00001050  2**4
+                  CONTENTS, ALLOC, LOAD, READONLY, CODE
+ 15 .text         00000185  0000000000001060  0000000000001060  00001060  2**4
+                  CONTENTS, ALLOC, LOAD, READONLY, CODE
+ 16 .fini         0000000d  00000000000011e8  00000000000011e8  000011e8  2**2
+                  CONTENTS, ALLOC, LOAD, READONLY, CODE
+ 17 .rodata       00000012  0000000000002000  0000000000002000  00002000  2**2
+                  CONTENTS, ALLOC, LOAD, READONLY, DATA
+ 18 .eh_frame_hdr 00000044  0000000000002014  0000000000002014  00002014  2**2
+                  CONTENTS, ALLOC, LOAD, READONLY, DATA
+ 19 .eh_frame     00000108  0000000000002058  0000000000002058  00002058  2**3
+                  CONTENTS, ALLOC, LOAD, READONLY, DATA
+ 20 .init_array   00000008  0000000000003db8  0000000000003db8  00002db8  2**3
+                  CONTENTS, ALLOC, LOAD, DATA
+ 21 .fini_array   00000008  0000000000003dc0  0000000000003dc0  00002dc0  2**3
+                  CONTENTS, ALLOC, LOAD, DATA
+ 22 .dynamic      000001f0  0000000000003dc8  0000000000003dc8  00002dc8  2**3
+                  CONTENTS, ALLOC, LOAD, DATA
+ 23 .got          00000048  0000000000003fb8  0000000000003fb8  00002fb8  2**3
+                  CONTENTS, ALLOC, LOAD, DATA
+ 24 .data         00000010  0000000000004000  0000000000004000  00003000  2**3
+                  CONTENTS, ALLOC, LOAD, DATA
+ 25 .bss          00000008  0000000000004010  0000000000004010  00003010  2**0
+                  ALLOC
+ 26 .comment      0000002b  0000000000000000  0000000000000000  00003010  2**0
+                  CONTENTS, READONLY
+SYMBOL TABLE:
+0000000000000318 l    d  .interp	0000000000000000              .interp
+0000000000000338 l    d  .note.gnu.property	0000000000000000              .note.gnu.property
+0000000000000358 l    d  .note.gnu.build-id	0000000000000000              .note.gnu.build-id
+000000000000037c l    d  .note.ABI-tag	0000000000000000              .note.ABI-tag
+00000000000003a0 l    d  .gnu.hash	0000000000000000              .gnu.hash
+00000000000003c8 l    d  .dynsym	0000000000000000              .dynsym
+0000000000000470 l    d  .dynstr	0000000000000000              .dynstr
+00000000000004f2 l    d  .gnu.version	0000000000000000              .gnu.version
+0000000000000500 l    d  .gnu.version_r	0000000000000000              .gnu.version_r
+0000000000000520 l    d  .rela.dyn	0000000000000000              .rela.dyn
+00000000000005e0 l    d  .rela.plt	0000000000000000              .rela.plt
+0000000000001000 l    d  .init	0000000000000000              .init
+0000000000001020 l    d  .plt	0000000000000000              .plt
+0000000000001040 l    d  .plt.got	0000000000000000              .plt.got
+0000000000001050 l    d  .plt.sec	0000000000000000              .plt.sec
+0000000000001060 l    d  .text	0000000000000000              .text
+00000000000011e8 l    d  .fini	0000000000000000              .fini
+0000000000002000 l    d  .rodata	0000000000000000              .rodata
+0000000000002014 l    d  .eh_frame_hdr	0000000000000000              .eh_frame_hdr
+0000000000002058 l    d  .eh_frame	0000000000000000              .eh_frame
+0000000000003db8 l    d  .init_array	0000000000000000              .init_array
+0000000000003dc0 l    d  .fini_array	0000000000000000              .fini_array
+0000000000003dc8 l    d  .dynamic	0000000000000000              .dynamic
+0000000000003fb8 l    d  .got	0000000000000000              .got
+0000000000004000 l    d  .data	0000000000000000              .data
+0000000000004010 l    d  .bss	0000000000000000              .bss
+0000000000000000 l    d  .comment	0000000000000000              .comment
+0000000000000000 l    df *ABS*	0000000000000000              crtstuff.c
+0000000000001090 l     F .text	0000000000000000              deregister_tm_clones
+00000000000010c0 l     F .text	0000000000000000              register_tm_clones
+0000000000001100 l     F .text	0000000000000000              __do_global_dtors_aux
+0000000000004010 l     O .bss	0000000000000001              completed.8061
+0000000000003dc0 l     O .fini_array	0000000000000000              __do_global_dtors_aux_fini_array_entry
+0000000000001140 l     F .text	0000000000000000              frame_dummy
+0000000000003db8 l     O .init_array	0000000000000000              __frame_dummy_init_array_entry
+0000000000000000 l    df *ABS*	0000000000000000              hello.c
+0000000000000000 l    df *ABS*	0000000000000000              crtstuff.c
+000000000000215c l     O .eh_frame	0000000000000000              __FRAME_END__
+0000000000000000 l    df *ABS*	0000000000000000              
+0000000000003dc0 l       .init_array	0000000000000000              __init_array_end
+0000000000003dc8 l     O .dynamic	0000000000000000              _DYNAMIC
+0000000000003db8 l       .init_array	0000000000000000              __init_array_start
+0000000000002014 l       .eh_frame_hdr	0000000000000000              __GNU_EH_FRAME_HDR
+0000000000003fb8 l     O .got	0000000000000000              _GLOBAL_OFFSET_TABLE_
+0000000000001000 l     F .init	0000000000000000              _init
+00000000000011e0 g     F .text	0000000000000005              __libc_csu_fini
+0000000000000000  w      *UND*	0000000000000000              _ITM_deregisterTMCloneTable
+0000000000004000  w      .data	0000000000000000              data_start
+0000000000000000       F *UND*	0000000000000000              puts@@GLIBC_2.2.5
+0000000000004010 g       .data	0000000000000000              _edata
+00000000000011e8 g     F .fini	0000000000000000              .hidden _fini
+0000000000000000       F *UND*	0000000000000000              __libc_start_main@@GLIBC_2.2.5
+0000000000004000 g       .data	0000000000000000              __data_start
+0000000000000000  w      *UND*	0000000000000000              __gmon_start__
+0000000000004008 g     O .data	0000000000000000              .hidden __dso_handle
+0000000000002000 g     O .rodata	0000000000000004              _IO_stdin_used
+0000000000001170 g     F .text	0000000000000065              __libc_csu_init
+0000000000004018 g       .bss	0000000000000000              _end
+0000000000001060 g     F .text	000000000000002f              _start
+0000000000004010 g       .bss	0000000000000000              __bss_start
+0000000000001149 g     F .text	000000000000001b              main
+0000000000004010 g     O .data	0000000000000000              .hidden __TMC_END__
+0000000000000000  w      *UND*	0000000000000000              _ITM_registerTMCloneTable
+0000000000000000  w    F *UND*	0000000000000000              __cxa_finalize@@GLIBC_2.2.5
+```
+
 ## Makefile  
 make命令执行时，需要一个makefile文件，以告诉make命令需要怎么样的去编译和链接程序。  
 
