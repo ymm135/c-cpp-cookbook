@@ -27,6 +27,8 @@
   - [make的工作方式](#make的工作方式)
 - [汇编指令](#汇编指令)
   - [寄存器分类](#寄存器分类)
+- [GDB](#gdb)
+  - [gdb gui](#gdb-gui)
 
 
 ## 简介
@@ -882,6 +884,64 @@ GNU的make工作时的执行步骤如下：（其它的make也是类似）
 6个段寄存器(ES、CS、SS、DS、FS和GS)  
 1个指令指针寄存器(EIP)  
 1个标志寄存器(EFlags)  
+
+## GDB
+### gdb gui 
+
+```sh
+apt install python3-pip
+```
+
+如果无法安装，可以手动下载源码安装`https://pypi.org/project/pip/#files`
+```sh
+wget https://files.pythonhosted.org/packages/6b/8b/0b16094553ecc680e43ded8f920c3873b01b1da79a54274c98f08cb29fca/pip-23.0.1.tar.gz
+tar -zxvf pip-23.0.1.tar.gz
+
+# 安装
+cd pip-23.0.1
+python3 setup.py install
+```
+
+```sh
+pip install gdbgui
+```
+
+> 安装时下载失败，可以切换pip源  
+
+```sh
+mkdir ~/.pip
+vim ~/.pip/pip.conf
+
+[global]
+index-url = https://pypi.tuna.tsinghua.edu.cn/simple
+```
+
+运行`gdbgui`  
+```sh
+gdbgui --host 10.211.55.16
+```
+
+> 远程访问时，需要增加ip地址  
+
+
+<br>
+<div align=center>
+    <img src="../../res/image/gdbgui-demo.png" width="100%"></img>  
+</div>
+<br>
+
+
+### gdb常用指令 
+
+|  命令  | 说明 | 用法 | 备注 |
+| ------ | ---- | --- | --- |
+| b   | 断点操作. b 函数名/ b 文件名:行号 | b malloc, b main.c:12 |  |
+| info break | 查看断点 | info b | |
+| clear | 清除断点, clear location | clear 断点序号, clear 函数名, clear 文件名:行号 | | 
+| delete/d | 清除所有断点, delete [breakpoints] [num] | d 删除所有断点 | 参数可有可无 | 
+| disable | 禁用断点, disable [breakpoints] [num...] | disable 1 2 | | 
+| enable | 禁用断点, [breakpoints] [num...]  | disable 1 2 | 如果不设定 num...，表示激活所有禁用的断点 | 
+
 
 
 

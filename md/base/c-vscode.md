@@ -336,6 +336,9 @@ apt install patchelf
 
 改变链接器+改变搜索路径
 ```sh
+# 编译
+/usr/bin/gcc -g3 -O0 /root/work/c-cpp-cookbook/code/test/main.c -o /root/work/c-cpp-cookbook/code/test/main
+
 # 替换ld 
 patchelf --set-interpreter /usr/local/glibc/lib/ld-2.31.so target_file
 
@@ -344,6 +347,10 @@ patchelf --replace-needed libc.so.6 /usr/local/glibc/lib/libc-2.31.so target_fil
 ```
 
 `target_file` 就是目标的bin文件  
+
+
+vscode调试时，如果无法进入断点，可以手动输入命令。`-exec b malloc`  
+
 
 
 

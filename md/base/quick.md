@@ -486,6 +486,8 @@ $1 = 4.59163468e-41
 rip            0x5555555551df      0x5555555551df <main+86>
 ```
 
+[:books: 返回目录](#目录)
+
 ## 运算符  
 ```c
 #include <stdio.h>
@@ -583,6 +585,8 @@ int main(void)
    0x0000555555555249 <+192>: subss  xmm0,xmm1
    0x000055555555524d <+196>: movss  DWORD PTR [rbp-0xc],xmm0
 ```
+
+[:books: 返回目录](#目录)
 
 ## 条件语句`if`  
 
@@ -685,6 +689,8 @@ int main(void)
 0x55555555604b:	"There is a remainder!"
 ```
 
+[:books: 返回目录](#目录)
+
 ## main函数参数 
 ```c
 #include <stdio.h>
@@ -756,6 +762,8 @@ Dump of assembler code for function main:
 $6 = 8
 ```
 
+[:books: 返回目录](#目录)
+
 ## 数组
 
 ```c
@@ -780,7 +788,7 @@ The array has 10 elements.
 ```sh
 5     int array[10] = {0,1,2,3,4,5,6,7,8,9};
    0x0000555555555184 <+27>:  mov    DWORD PTR [rbp-0x30],0x0                # [rbp-0x30] 数组的首地址
-   0x000055555555518b <+34>:  mov    DWORD PTR [rbp-0x2c],0x1
+   0x000055555555518b <+34>:  mov    DWORD PTR [rbp-0x2c],0x1                # 栈存储的是值，引用时，栈存储的是地址
    0x0000555555555192 <+41>:  mov    DWORD PTR [rbp-0x28],0x2
    0x0000555555555199 <+48>:  mov    DWORD PTR [rbp-0x24],0x3
    0x00005555555551a0 <+55>:  mov    DWORD PTR [rbp-0x20],0x4
@@ -800,6 +808,7 @@ The array has 10 elements.
 
 > 此处看到`sizeof` 不是系统函数，已经预编译出来，通过`宏定义`实现的  ``
 
+[:books: 返回目录](#目录)
 
 ## malloc和free
 ```c
@@ -891,7 +900,7 @@ Source directories searched: /usr/src/glibc/glibc-2.31/malloc:$cdir:$cwd
 -exec b main.c:12
 -exec r
 -exec b malloc
--exec b malloc.c:32
+-exec b alloc_perturb
 
 -exec l malloc.c:3021, malloc.c:3082
 3021  void *
@@ -959,7 +968,79 @@ Source directories searched: /usr/src/glibc/glibc-2.31/malloc:$cdir:$cwd
 ```
 
 可以使用`patchelf` 替换debug版本的`glibc`  
+```sh
+/usr/bin/gcc -g3 -O0 /root/work/c-cpp-cookbook/code/test/main.c -o /root/work/c-cpp-cookbook/code/test/main
 
+patchelf --set-interpreter /usr/local/glibc/lib/ld-2.31.so main
+patchelf --replace-needed libc.so.6 /usr/local/glibc/lib/libc-2.31.so main
+```
+
+我们通过 patchelf 修改 ELF 文件达到加载指定版本 libc。我们先用 "--set-interpreter" 这个选项来将旧的 ld.so 替换为要加载的 ld.so，然后使用 "--replace-needed" 这个选项将旧的 libc.so 替换成要加载的 libc.so。在使用 "--replace-needed" 时，第 2 个参数是程序原本的动态库的路径，可以由 ldd $目标文件 得到，第 3 个参数是新的动态库的路径，第 4 个参数为要修改文件的路径。  
+
+查看是否修改成功
+```sh
+ldd main
+	linux-vdso.so.1 (0x00007ffc4d3fe000)
+	/usr/local/glibc/lib/libc-2.31.so (0x00007f6a8c4fe000)
+	/usr/local/glibc/lib/ld-2.31.so => /lib64/ld-linux-x86-64.so.2 (0x00007f6a8c6d2000)
+
+file main
+main: ELF 64-bit LSB shared object, x86-64, version 1 (SYSV), dynamically linked, interpreter /usr/local/glibc/lib/ld-2.31.so, for GNU/Linux 3.2.0, BuildID[sha1]=f0ff7b2471c128d72eeae9c7485eb596b48f6ed3, with debug_info, not stripped
+```
+
+使用objdump查看`objdump -x main`
+```sh
+之前的数据:
+objdump -x main | grep -i need
+  NEEDED               libc.so.6
+
+修改后:
+Dynamic Section:
+  NEEDED               /usr/local/glibc/lib/libc-2.31.so
+```
+
+使用gdb调试:  
+```sh
+$ gdb main
+(gdb) directory /usr/src/glibc/glibc-2.31/malloc
+Source directories searched: /usr/src/glibc/glibc-2.31/malloc:$cdir:$cwd
+(gdb) b main.c:12
+Breakpoint 1 at 0x124a: file /root/work/c-cpp-cookbook/code/test/main.c, line 12.
+(gdb) r
+Starting program: /root/work/c-cpp-cookbook/code/test/main 
+
+Breakpoint 1, main () at /root/work/c-cpp-cookbook/code/test/main.c:12
+12	  double *scores = malloc(INITIAL_CAPACITY * sizeof(double));
+(gdb) b malloc
+Breakpoint 2 at 0x7ffff7e92000: malloc. (2 locations)
+(gdb) c
+Continuing.
+
+Breakpoint 2, __GI___libc_malloc (bytes=24) at malloc.c:3023
+3023	{
+(gdb) l malloc.c:3021, malloc.c:3082
+```
+
+`__GI___libc_malloc`=>`_int_malloc (&main_arena, bytes);`=>`static Void_t* sYSMALLOc(INTERNAL_SIZE_T nb, mstate av)`=>`mmap (void *start, size_t len, int prot, int flags, int fd, off_t offset)`  
+
+最终实现
+```c
+static int perturb_byte;
+
+static void
+alloc_perturb (char *p, size_t n)
+{
+  if (__glibc_unlikely (perturb_byte))
+    memset (p, perturb_byte ^ 0xff, n);
+}
+
+static void
+free_perturb (char *p, size_t n)
+{
+  if (__glibc_unlikely (perturb_byte))
+    memset (p, perturb_byte, n);
+}
+```
 
 查看malloc与free的实现  
 ```sh
@@ -1057,6 +1138,63 @@ Dump of assembler code for function free:
 End of assembler dump.
 ```
 
+### malloc/free源码分析
+[参考文章](https://zhuanlan.zhihu.com/p/163401620)  
+
+malloc 和 free 内部依赖的是GNU Allocator, 也叫Doug Lea的Allocator: https://gee.cs.oswego.edu/dl/html/malloc.html  
+
+> 在内存管理领域，我们一般用「堆」指代用于分配动态内存的虚拟地址空间，而用「栈」指代用于分配静态内存的虚拟地址空间。具体到虚拟内存布局（Memory Layout），堆维护在通过brk系统调用申请的「Heap」及通过mmap系统调用申请的「Memory Mapping Segment」中；而栈维护在通过汇编栈指令动态调整的「Stack」中。在 Glibc 里，「Heap」用于分配较小的内存及主线程使用的内存。 
+
+这篇分析会主要注意Allocator是怎么管理内存的。它就像操作系统和用户中间的一层，扮演了一个内存池的角色。  
+
+总的来说，设计理念是：  
+
+首先在`allocator`会在堆上申请一大块连续内存区域，并且这个区域会被切分为各个部分。对于用户的请求大小进行分级，并且一层层地从`fastbin`->`unsorted bins`找到`small bins`，`large bins`。如果还找不到，就只能去`top Chunk`。`top Chunk`即可以通过`sbrk`拓展内存边界，也可以通过`mmap`来直接映射内存。  
+
+
+`内存池`是一种半内存管理方法，它能帮助程序进行自动内存管理。
+ptmalloc [glic库的实现] 就是采用内存池的管理方式。 ptmaloc 采用 `边界标记法` ，对内存进行分块，从而便于对内存块进行分配与回收。为了提高内存分配函数 maclloc 的高效性，ptmalloc() 会 预先向操作系统申请一块内存 供用户使用，也能产生更少的内存碎片。用户释放掉的内存并非直接返回给操作系统，而是返回给分配器，由分配器统一管理空闲内存。  
+
+先介绍3个概念，arena，Bins，Chunk，这样在分析源代码时会对理解有帮助。  
+
+<br>
+<div align=center>
+    <img src="../../res/image/allocator-1.png" width="80%"></img>  
+</div>
+<br>
+
+这张图比较好的阐述了三者之间的关系，arena 是分配在堆上的一个堆区，中间的Free List保存的是bins，它代表指向Chunk的指针数组。而bins又可以分成3段，每一段保存了不同大小的Chunk。因此这类似于我之前讲述的管理器的设计，通过数组来管理指针，每个指针又是一个链表指针。释放内存块和申请内存块是对链表的增删查改。  
+
+malloc会对申请的大小进行评估，决定是使用sbrk还是mmap来分配堆区 (arena)，这样可以减少后续申请中向操作系统申请内存的次数。  
+
+三者概念的详细概念解释如下：  
+
+`arena`：通过sbrk或mmap系统调用为线程分配的堆区，按线程的类型可以分为2类：
+
+- main arena：主线程建立的arena；
+
+- thread arena：子线程建立的arena；
+
+`chunk`：逻辑上划分的一小块内存，根据作用不同分为4类：
+
+- Allocated chunk：即分配给用户且未释放的内存块；
+
+- Free chunk：即用户已经释放的内存块；
+
+- Top chunk
+
+- Last Remainder chunk
+
+`bin`：一个用以保存Free chunk链表的表头信息的指针数组，按所悬挂链表的类型可以分为4类:
+
+- Fast bin
+- Unsorted bin
+- Small bin
+- Large bin
+
+
+[:books: 返回目录](#目录)
+
 ## srand/rand随机  
 
 ```c
@@ -1120,7 +1258,7 @@ After flipping the coin 90 times, the results were
 11    srand(time(0)); //initializing randomization *once*
    0x0000555555555212 <+41>:  mov    edi,0x0
    0x0000555555555217 <+46>:  call   0x5555555550d0 <time@plt>
-   0x000055555555521c <+51>:  mov    edi,eax
+   0x000055555555521c <+51>:  mov    edi,eax                       # 函数的返回值放在eax中  
    0x000055555555521e <+53>:  call   0x5555555550c0 <srand@plt>
 
 23    {
@@ -1136,6 +1274,592 @@ After flipping the coin 90 times, the results were
    0x0000555555555279 <+144>: mov    DWORD PTR [rbp-0xc],eax
 ```
 
-## 
+[:books: 返回目录](#目录)
+
+## for循环  
+
+```c
+#include <stdio.h>
+
+
+int main(void) 
+{
+	//declare constant vars for these values
+	const int games = 4;
+	const int players = 5;
+
+	//declare two-dimensional array to store scores for 5 players over 4 games;
+	//declare float array to store our totals for each player later
+	int scores[4][5];
+	int totals[5];
+	int highest_total;
+
+	//we need an outer for loop counter and an inner for loop counter;
+	int game_counter, player_counter;
+
+	//start outer loop (4 games)
+	for (game_counter = 0; game_counter < games; game_counter++)
+	{
+		printf("Game #%d\n", (game_counter + 1));
+
+		//start inner loop for each player (5 players)
+		for (player_counter = 0; player_counter < players; player_counter++)
+		{
+			printf("Enter scoring total for Player #%d: ", (player_counter + 1));
+
+			//put the score into the scores array
+			scanf("%d", &scores[game_counter][player_counter]);
+		}
+	}
+
+	//create a loop to iterate through each player game by game to create their point totals
+	for (player_counter = 0; player_counter < players; player_counter++)
+	{
+		int player_total = 0;
+		for (game_counter = 0; game_counter < games; game_counter++)
+		{
+			//this player's total will be added to by each game total for the player in the scores array
+			player_total += scores[game_counter][player_counter];
+		}
+		//we begin populating the totals array we initialized earlier with each player's total before moving onto the next player
+		totals[player_counter] = player_total;
+	}
+
+	//now we'll create the highest total of 0 to start, and if we iterate through the totals array
+	//each total in the array that's higher than the previous highest, will be come the new highest
+	highest_total = 0;
+	int player_id;
+	for (player_counter = 0; player_counter < players; player_counter++)
+	{
+		if (totals[player_counter] > highest_total)
+		{
+			highest_total = totals[player_counter];
+			
+			//this player_id variable will help us keep track of who the current leader is in points
+			player_id = (player_counter + 1);
+		}
+	}
+
+	//initialize a new float variable which will be our average
+	//use the (float) operator to change the integer variable being divided into a float operation
+	float ppg = (float)(highest_total / 4);
+	printf("Player #%d had the highest scoring average at %.2f points per game.\n", player_id, ppg);
+	
+	return 0;
+
+}
+```
+
+反汇编结果
+```sh
+6     //declare constant vars for these values
+7     const int games = 4;
+   0x00005555555551a7 <+30>:  mov    DWORD PTR [rbp-0x8c],0x4     # 常量也是在栈上分配的  
+
+8     const int players = 5;
+   0x00005555555551b1 <+40>:  mov    DWORD PTR [rbp-0x88],0x5
+
+9  
+10    //declare two-dimensional array to store scores for 5 players over 4 games;
+11    //declare float array to store our totals for each player later
+12    int scores[4][5];                                               # 一维/二维数组默认没有初始化和内存分配
+13    int totals[5];
+14    int highest_total;
+15 
+16    //we need an outer for loop counter and an inner for loop counter;
+17    int game_counter, player_counter;
+18 
+19    //start outer loop (4 games)
+20    for (game_counter = 0; game_counter < games; game_counter++)
+   0x00005555555551bb <+50>:  mov    DWORD PTR [rbp-0x9c],0x0              # [rbp-0x9c], game_counter = 0  
+   0x00005555555551c5 <+60>:  jmp    0x555555555268 <main+223>
+   0x0000555555555261 <+216>: add    DWORD PTR [rbp-0x9c],0x1              #  game_counter++
+   0x0000555555555268 <+223>: mov    eax,DWORD PTR [rbp-0x9c]              # 先不+1， 而是先比较  
+   0x000055555555526e <+229>: cmp    eax,DWORD PTR [rbp-0x8c]              # 比较 game_counter < games
+   0x0000555555555274 <+235>: jl     0x5555555551ca <main+65>
+
+21    {
+22       printf("Game #%d\n", (game_counter + 1));
+   0x00005555555551ca <+65>:  mov    eax,DWORD PTR [rbp-0x9c]              # 
+   0x00005555555551d0 <+71>:  add    eax,0x1
+   0x00005555555551d3 <+74>:  mov    esi,eax
+   0x00005555555551d5 <+76>:  lea    rdi,[rip+0xe2c]        # 0x555555556008 # "Game #%d\n"  
+   0x00005555555551dc <+83>:  mov    eax,0x0
+   0x00005555555551e1 <+88>:  call   0x555555555080 <printf@plt>
+
+23 
+24       //start inner loop for each player (5 players)
+25       for (player_counter = 0; player_counter < players; player_counter++)
+   0x00005555555551e6 <+93>:  mov    DWORD PTR [rbp-0x98],0x0
+   0x00005555555551f0 <+103>: jmp    0x555555555253 <main+202>
+   0x000055555555524c <+195>: add    DWORD PTR [rbp-0x98],0x1
+   0x0000555555555253 <+202>: mov    eax,DWORD PTR [rbp-0x98]
+   0x0000555555555259 <+208>: cmp    eax,DWORD PTR [rbp-0x88]
+   0x000055555555525f <+214>: jl     0x5555555551f2 <main+105>
+
+26       {
+27          printf("Enter scoring total for Player #%d: ", (player_counter + 1));
+   0x00005555555551f2 <+105>: mov    eax,DWORD PTR [rbp-0x98]
+   0x00005555555551f8 <+111>: add    eax,0x1
+   0x00005555555551fb <+114>: mov    esi,eax
+   0x00005555555551fd <+116>: lea    rdi,[rip+0xe14]        # 0x555555556018
+   0x0000555555555204 <+123>: mov    eax,0x0
+   0x0000555555555209 <+128>: call   0x555555555080 <printf@plt>
+
+28 
+29          //put the score into the scores array
+30          scanf("%d", &scores[game_counter][player_counter]);
+   0x000055555555520e <+133>: lea    rcx,[rbp-0x60]
+   0x0000555555555212 <+137>: mov    eax,DWORD PTR [rbp-0x98]
+   0x0000555555555218 <+143>: movsxd rsi,eax
+   0x000055555555521b <+146>: mov    eax,DWORD PTR [rbp-0x9c]
+   0x0000555555555221 <+152>: movsxd rdx,eax
+   0x0000555555555224 <+155>: mov    rax,rdx
+   0x0000555555555227 <+158>: shl    rax,0x2
+   0x000055555555522b <+162>: add    rax,rdx
+   0x000055555555522e <+165>: add    rax,rsi
+   0x0000555555555231 <+168>: shl    rax,0x2
+   0x0000555555555235 <+172>: add    rax,rcx
+   0x0000555555555238 <+175>: mov    rsi,rax
+   0x000055555555523b <+178>: lea    rdi,[rip+0xdfb]        # 0x55555555603d
+   0x0000555555555242 <+185>: mov    eax,0x0
+   0x0000555555555247 <+190>: call   0x555555555090 <__isoc99_scanf@plt>
+
+31       }
+32    }
+```
+
+二维数组
+```sh
+-exec p scores
+$1 = {{6, 8, 9, 2, 4}, {1, 2, 3, 4, 1}, {3, 4, 5, 6, 7}, {5, 4, 3, 2, 1}}
+-exec p &scores
+$2 = (int (*)[4][5]) 0x7fffffffe000
+-exec p &scores[0]
+$9 = (int (*)[5]) 0x7fffffffe000
+-exec p &scores[1]
+$4 = (int (*)[5]) 0x7fffffffe014          # 5 x 4 = 20 byte
+-exec p &scores[2]
+$5 = (int (*)[5]) 0x7fffffffe028          
+-exec p &scores[3]
+$6 = (int (*)[5]) 0x7fffffffe03c
+
+一共占用 4 x 5 x 4 = 80 byte  
+-exec x/20xw 0x7fffffffe000
+0x7fffffffe000:	0x00000006	0x00000008	0x00000009	0x00000002
+0x7fffffffe010:	0x00000004	0x00000001	0x00000002	0x00000003
+0x7fffffffe020:	0x00000004	0x00000001	0x00000003	0x00000004
+0x7fffffffe030:	0x00000005	0x00000006	0x00000007	0x00000005
+0x7fffffffe040:	0x00000004	0x00000003	0x00000002	0x00000001
+
+在内存中顺序排列的  
+```
+
+[:books: 返回目录](#目录)
+
+## 引用与指针  
+
+```c
+#include <stdio.h>
+
+int main(void)
+{
+    int number = 21;
+    int copy_number = 0;
+    copy_number = number;
+
+    int *ptr = &number;
+
+    printf("The value of our pointer is: %p\n", ptr);
+
+	return 0;
+}
+```
+
+反汇编内容
+```sh
+5     int number = 21;
+   0x0000555555555184 <+27>:  mov    DWORD PTR [rbp-0x18],0x15    
+
+6     int copy_number = 0;
+   0x000055555555518b <+34>:  mov    DWORD PTR [rbp-0x14],0x0   # [rbp-0x14] 存储的内容是 0  
+
+7     copy_number = number;
+   0x0000555555555192 <+41>:  mov    eax,DWORD PTR [rbp-0x18]
+   0x0000555555555195 <+44>:  mov    DWORD PTR [rbp-0x14],eax   # mov 把 [rbp-0x18]的内容拷贝到 [rbp-0x14]  
+
+8 
+9     int *ptr = &number;                                       # &number 相当于取地址 lea  
+=> 0x0000555555555198 <+47>:  lea    rax,[rbp-0x18]             # 把 [rbp-0x18] 地址的值加载到 rax   
+   0x000055555555519c <+51>:  mov    QWORD PTR [rbp-0x10],rax   # 把 [rbp-0x18] 地址存储到 [rbp-0x10]
+```
+
+[:books: 返回目录](#目录)
+
+
+## 数组  
+```c
+#include <stdio.h>
+
+int main(void)
+{
+	int array[10];
+
+	printf("%p\n", array);
+	printf("%p\n", &array[0]);
+
+	return 0;
+}
+```
+
+输出结果: 数组名和数组第一个元素的地址为同一个  
+```sh
+0x7fffffffe030
+0x7fffffffe030
+```
+
+反汇编内容
+```sh
+5   int array[10];
+6 
+7   printf("%p\n", array);
+   0x0000555555555184 <+27>:  lea    rax,[rbp-0x30]         # 打印数组前，先获取数组变量的地址  
+   0x0000555555555188 <+31>:  mov    rsi,rax
+   0x000055555555518b <+34>:  lea    rdi,[rip+0xe72]        # 0x555555556004  "%p\n"  
+   0x0000555555555192 <+41>:  mov    eax,0x0
+   0x0000555555555197 <+46>:  call   0x555555555070 <printf@plt>
+
+8   printf("%p\n", &array[0]);
+   0x000055555555519c <+51>:  lea    rax,[rbp-0x30]
+   0x00005555555551a0 <+55>:  mov    rsi,rax
+   0x00005555555551a3 <+58>:  lea    rdi,[rip+0xe5a]        # 0x555555556004
+   0x00005555555551aa <+65>:  mov    eax,0x0
+   0x00005555555551af <+70>:  call   0x555555555070 <printf@plt>
+
+9 
+10    return 0;
+=> 0x00005555555551b4 <+75>:  mov    eax,0x0
+```
+
+[:books: 返回目录](#目录)
+
+## 函数调用
+
+```c
+#include <stdio.h>
+
+void hello(void);
+
+int main(void)
+{
+	hello();
+
+	return 0;
+}
+
+void hello(void)
+{
+	printf("Hello, World!\n");
+}
+```
+
+反汇编内容:
+```sh
+-exec disas /m
+Dump of assembler code for function main:
+6 {
+   0x0000555555555149 <+0>: endbr64 
+   0x000055555555514d <+4>: push   rbp
+   0x000055555555514e <+5>: mov    rbp,rsp
+
+7   hello();
+   0x0000555555555151 <+8>: call   0x55555555515d <hello>   # 函数调用，函数参数都在寄存器中  
+
+8 
+9   return 0;
+=> 0x0000555555555156 <+13>:  mov    eax,0x0
+
+
+-exec disas /m
+Dump of assembler code for function hello:
+13  {
+   0x000055555555515d <+0>: endbr64 
+   0x0000555555555161 <+4>: push   rbp
+   0x0000555555555162 <+5>: mov    rbp,rsp
+
+14    printf("Hello, World!\n");
+=> 0x0000555555555165 <+8>: lea    rdi,[rip+0xe98]        # 0x555555556004
+   0x000055555555516c <+15>:  call   0x555555555050 <puts@plt>
+
+15  }
+   0x0000555555555171 <+20>:  nop
+   0x0000555555555172 <+21>:  pop    rbp
+   0x0000555555555173 <+22>:  ret    
+```
+
+[:books: 返回目录](#目录)
+
+## char数组  
+
+```c
+#include <stdio.h>
+
+void hello(void)
+{
+	char array[] = {72, 101, 108, 108, 111, 44, 32, 87, 111, 114, 108, 100, 33};
+
+	printf("%s\n", array);
+}
+
+int main(void) 
+{
+	hello();
+}
+```
+
+打印输出`Hello, World!`  
+`puts`打印为`{72, 101, 108, 108, 111, 44, 32, 87, 111, 114, 108, 100, 33}`
+
+查看数组内容
+```sh
+-exec p array
+$2 = "Hello, World!"
+-exec p &array
+$3 = (char (*)[13]) 0x7fffffffe03b
+-exec x/16c &array
+0x7fffffffe03b:	72 'H'	101 'e'	108 'l'	108 'l'	111 'o'	44 ','	32 ' '	87 'W'
+0x7fffffffe043:	111 'o'	114 'r'	108 'l'	100 'd'	33 '!'	0 '\000'	103 'g'	-16 '\360'
+-exec x/16x &array
+0x7fffffffe03b:	0x48	0x65	0x6c	0x6c	0x6f	0x2c	0x20	0x57
+0x7fffffffe043:	0x6f	0x72	0x6c	0x64	0x21	0x00	0x67	0xf0
+```
+
+```c
+#include <stdio.h>
+
+
+void hello(void)
+{
+	char array[] = {72, 101, 108, 108, 111, 44, 32, 87, 111, 114, 108, 100, 33, '\0'};
+
+	printf("%s\n", array);
+}
+
+int main(void) 
+{
+	hello();
+}
+```
+
+打印输出`Hello, World!`  
+`puts`打印为`{72, 101, 108, 108, 111, 44, 32, 87, 111, 114, 108, 100, 33, '`
+
+查看数组内容
+```sh
+-exec p array
+$1 = "Hello, World!"
+-exec p &array
+$2 = (char (*)[14]) 0x7fffffffe03a
+-exec x/16c &array
+0x7fffffffe03a:	72 'H'	101 'e'	108 'l'	108 'l'	111 'o'	44 ','	32 ' '	87 'W'
+0x7fffffffe042:	111 'o'	114 'r'	108 'l'	100 'd'	33 '!'	0 '\000'	0 '\000'	93 ']'
+
+-exec call sizeof(array)
+$1 = 14
+```
+
+为什么`char`数组后会增加`'\0'`?  
+
+如果使用字符串初始化字符数组: 
+```c
+#include <stdio.h>
+
+
+void hello(void)
+{
+	char array[] = "Hello, World!";
+
+	printf("%s\n", array);
+}
+
+int main(void) 
+{
+	hello();
+}
+```
+
+查看数组内容
+```sh
+-exec p array
+$1 = "Hello, World!"
+$2 = (char (*)[14]) 0x7fffffffe03a
+
+-exec x/16c &array
+0x7fffffffe03a:	72 'H'	101 'e'	108 'l'	108 'l'	111 'o'	44 ','	32 ' '	87 'W'
+0x7fffffffe042:	111 'o'	114 'r'	108 'l'	100 'd'	33 '!'	0 '\000'	0 '\000'	-114 '\216'
+```
+
+> 字符串之后增加了一位`\0`,数组的长度也是 13+1 = 14 , 经过验证，int数组最后一位+1，也是`\0`   
+
+[:books: 返回目录](#目录)  
+
+## malloc
+```c
+#include <stdio.h>
+#include <stdlib.h>
+
+int main (void)
+{
+	//create char pointer
+	char *ptr;
+
+	//ptr is now the memory address of the beginning of this 10 char element array.
+	//we used the sizeof() function to make sure that the size of memory allocated is 10 units on any host
+	ptr = malloc(10 * sizeof(char));
+
+	//if malloc fails, our ptr pointer will be pointing towards a NULL value, this checks for that
+	if (ptr == NULL)
+	{
+		printf("Memory could not be allocated.");
+		return 1;
+	}
+	else 
+	{
+		printf("Memory was successfully allocated.");
+		//this makes sure we don't keep memory allocated that we're not using.
+		free(ptr);
+		return 0;
+	}
+}
+```
+
+反汇编结果
+```sh
+6   //create char pointer
+7   char *ptr;
+8 
+9   //ptr is now the memory address of the beginning of this 10 char element array.
+10    //we used the sizeof() function to make sure that the size of memory allocated is 10 units on any host
+11    ptr = malloc(10 * sizeof(char));
+=> 0x0000555555555195 <+12>:  mov    edi,0xa
+   0x000055555555519a <+17>:  call   0x555555555090 <malloc@plt>
+   0x000055555555519f <+22>:  mov    QWORD PTR [rbp-0x8],rax         # 返回值为`void*`, 也就是把变量存储到ptr中，省去了lea操作  
+
+12  
+13    //if malloc fails, our ptr pointer will be pointing towards a NULL value, this checks for that
+14    if (ptr == NULL)
+   0x00005555555551a3 <+26>:  cmp    QWORD PTR [rbp-0x8],0x0
+   0x00005555555551a8 <+31>:  jne    0x5555555551c2 <main+57>
+
+15    {
+16      printf("Memory could not be allocated.");
+   0x00005555555551aa <+33>:  lea    rdi,[rip+0xe57]        # 0x555555556008
+   0x00005555555551b1 <+40>:  mov    eax,0x0
+   0x00005555555551b6 <+45>:  call   0x555555555080 <printf@plt>
+
+17      return 1;
+   0x00005555555551bb <+50>:  mov    eax,0x1
+   0x00005555555551c0 <+55>:  jmp    0x5555555551e4 <main+91>
+
+18    }
+19    else 
+20    {
+21      printf("Memory was successfully allocated.");
+   0x00005555555551c2 <+57>:  lea    rdi,[rip+0xe5f]        # 0x555555556028
+   0x00005555555551c9 <+64>:  mov    eax,0x0
+   0x00005555555551ce <+69>:  call   0x555555555080 <printf@plt>
+
+22      //this makes sure we don't keep memory allocated that we're not using.
+23      free(ptr);
+   0x00005555555551d3 <+74>:  mov    rax,QWORD PTR [rbp-0x8]
+   0x00005555555551d7 <+78>:  mov    rdi,rax
+   0x00005555555551da <+81>:  call   0x555555555070 <free@plt>
+
+24      return 0;
+   0x00005555555551df <+86>:  mov    eax,0x0
+
+25    }
+26  }
+   0x00005555555551e4 <+91>:  leave  
+   0x00005555555551e5 <+92>:  ret   
+```
+
+[:books: 返回目录](#目录)
+
+## struct结构体
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+
+//define structure
+struct struct_name
+{
+	int integer;
+	char character;
+	float floatie;
+//give an instance of the structure the name 'example'
+} example;
+
+int main (void)
+{
+	//use the . notation to refer to the members of the 'example' instance of the 'struct_name' struct
+	example.integer = 50;
+	example.character = 'W';
+	example.floatie = 3.14;
+
+  struct struct_name name;
+  name.integer = 8;
+  name.character = 'H';
+  name.floatie = 2.0;
+
+	printf("This is the int: %d", example.integer);
+	printf(", this is the char: %c", example.character);
+	printf(", this is the float: %.2f\n", example.floatie);
+	
+	return 0;
+	
+}
+```
+
+反汇编内容:  
+```sh
+15    //use the . notation to refer to the members of the 'example' instance of the 'struct_name' struct
+16    example.integer = 50;
+=> 0x0000555555555155 <+12>:  mov    DWORD PTR [rip+0x2eb9],0x32        # 0x555555558018 <example>
+
+17    example.character = 'W';
+   0x000055555555515f <+22>:  mov    BYTE PTR [rip+0x2eb6],0x57        # 0x55555555801c <example+4>
+
+18    example.floatie = 3.14;
+   0x0000555555555166 <+29>:  movss  xmm0,DWORD PTR [rip+0xede]        # 0x55555555604c
+   0x000055555555516e <+37>:  movss  DWORD PTR [rip+0x2eaa],xmm0        # 0x555555558020 <example+8>
+
+19  
+20    struct struct_name name;
+21    name.integer = 8;
+   0x0000555555555176 <+45>:  mov    DWORD PTR [rbp-0xc],0x8
+
+22    name.character = 'H';
+   0x000055555555517d <+52>:  mov    BYTE PTR [rbp-0x8],0x48
+
+23    name.floatie = 2.0;
+   0x0000555555555181 <+56>:  movss  xmm0,DWORD PTR [rip+0xec7]        # 0x555555556050
+   0x0000555555555189 <+64>:  movss  DWORD PTR [rbp-0x4],xmm0
+```
+
+从内容来看，结构体也是线性存储的，按照偏移量来， 查看内存结构
+```sh
+-exec p example
+$1 = {integer = 0, character = 0 '\000', floatie = 0}
+-exec p &example
+$2 = (struct struct_name *) 0x555555558018 <example>
+-exec call sizeof(example)
+$3 = 12                             # 长度为 4 + 4 + 4  
+-exec call sizeof(&example)
+$4 = 8                              # 指针的大小为8
+```
+
+[:books: 返回目录](#目录)
 
 
