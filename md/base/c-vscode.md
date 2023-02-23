@@ -1,5 +1,5 @@
 - # c-vscode
-  
+
 - [在线调试](#在线调试)
   - [插件](#插件)
   - [配置](#配置)
@@ -8,6 +8,8 @@
   - [vscode 阅读c及glibc源码](#vscode-阅读c及glibc源码)
   - [vscode 在线调试c及glibc源码](#vscode-在线调试c及glibc源码)
   - [patchelf 切换bin文件的libc版本](#patchelf-切换bin文件的libc版本)
+  - [内核调试](#内核调试)
+
 
 ## 在线调试
 [官方文档](https://code.visualstudio.com/docs/cpp/config-linux)  
@@ -350,6 +352,141 @@ patchelf --replace-needed libc.so.6 /usr/local/glibc/lib/libc-2.31.so target_fil
 
 
 vscode调试时，如果无法进入断点，可以手动输入命令。`-exec b malloc`  
+
+
+### 内核调试  
+
+- ### [ubuntu20 搭建内核调试环境](https://github.com/ymm135/golang-cookbook/blob/master/md/other/ubuntu-kernel-debug.md)  
+
+
+Linux 内核中的调试符号包含源代码级别的信息，如函数名称、函数调用约定、以及源代码行号到指令的映射。这些信息在调试或剖析内核的时候非常有用。我们需要获得任何内核的调试符号。  
+
+通常来说，有 2 种方法可以使用调试符号：  
+- 使用源码构建带有调试符号的内核源代码，通常适用于自己修改源码编译的场景，构建内核的过程依据编译选项，一般会耗费比较长的时间；  
+- 使用现成包含编译好的调试符号包进行安装；  
+
+
+为了方便，可以使用现成编译好的环境。 可以从[ubuntu官网](https://launchpad.net/ubuntu/impish)下载  
+
+关键字为`linux-image-unsigned-`, 也可以加上内核版本`linux-image-unsigned-5.4.0-135`  
+
+```sh
+$ cat /proc/version
+Linux version 5.4.0-135-generic (buildd@lcy02-amd64-066) (gcc version 9.4.0 (Ubuntu 9.4.0-1ubuntu1~20.04.1)) #152-Ubuntu SMP Wed Nov 23 20:19:22 UTC 2022
+```
+
+[linux-image-unsigned-5.4.0-135-generic-dbgsym](https://launchpad.net/ubuntu/focal/+package/linux-image-unsigned-5.4.0-135-generic-dbgsym)  
+
+或者可以通过系统安装  
+```sh
+sudo apt-get install linux-image-$(uname -r)-dbgsym
+```
+
+> Get:1 http://ddebs.ubuntu.com focal-updates/main amd64 linux-image-unsigned-5.4.0-135-generic-dbgsym amd64 5.4.0-135.152 [970 MB]  
+
+是否安装成功`ls -l /usr/lib/debug/boot`  
+```sh
+ls -l /usr/lib/debug/boot
+total 770816
+-rw-r--r-- 1 root root 789310448 Nov 23 19:51 vmlinux-5.4.0-135-generic
+```
+
+为了将调试符号与源码关联查看，我们还需要安装源码，然后与安装的 dbgsym 进行关联。  
+
+```sh
+$ sudo apt-cache search linux-source
+linux-source - Linux kernel source with Ubuntu patches
+linux-source-5.4.0 - Linux kernel source for version 5.4.0 with Ubuntu patches
+linux-gkeop-source-5.4.0 - Linux kernel source for version 5.4.0 with Ubuntu patches
+linux-hwe-5.11-source-5.11.0 - Linux kernel source for version 5.11.0 with Ubuntu patches
+linux-hwe-5.13-source-5.13.0 - Linux kernel source for version 5.13.0 with Ubuntu patches
+linux-hwe-5.15-source-5.15.0 - Linux kernel source for version 5.15.0 with Ubuntu patches
+linux-hwe-5.8-source-5.8.0 - Linux kernel source for version 5.8.0 with Ubuntu patches
+linux-intel-5.13-source-5.13.0 - Linux kernel source for version 5.13.0 with Ubuntu patches
+
+$ apt install linux-source-5.4.0
+$ cd /usr/src
+$ tar -jxvf linux-source-5.4.0.tar.bz2
+$ cd /usr/src/linux-source-5.4.0
+```
+
+测试效果  
+需要 gdb 首先获取到 vmlinux-5.13.0-20-generic 的编译目录，使用 `list *__x64_sys_mount` 会提示对应的编译目录，如果我们在 `/usr/src` 目录已经安装了源码，建立快捷方式可  
+
+```
+mkdir -p /build/linux-EI0ZHT
+ln -s /usr/src/linux-source-5.4.0 /build/linux-EI0ZHT/linux-5.4.0
+
+$ gdb /usr/lib/debug/boot/vmlinux-5.4.0-135-generic
+list *__x64_sys_mount
+0xffffffff812fbf00 is in __x64_sys_mount (/build/linux-EI0ZHT/linux-5.4.0/fs/namespace.c:3392).
+warning: Source file is more recent than executable.
+3387		kfree(kernel_type);
+3388	out_type:
+3389		return ret;
+3390	}
+3391	
+3392	SYSCALL_DEFINE5(mount, char __user *, dev_name, char __user *, dir_name,
+3393			char __user *, type, unsigned long, flags, void __user *, data)
+3394	{
+3395		return ksys_mount(dev_name, dir_name, type, flags, data);
+3396	}
+(gdb) disassemble *__x64_sys_mount
+Dump of assembler code for function __x64_sys_mount:
+   0xffffffff812fbf00 <+0>:	callq  0xffffffff81c01ab0 <__fentry__>
+   0xffffffff812fbf05 <+5>:	push   %rbp
+   0xffffffff812fbf06 <+6>:	mov    0x70(%rdi),%r9
+   0xffffffff812fbf0a <+10>:	mov    0x38(%rdi),%rcx
+   0xffffffff812fbf0e <+14>:	mov    0x60(%rdi),%rdx
+   0xffffffff812fbf12 <+18>:	mov    0x68(%rdi),%rsi
+   0xffffffff812fbf16 <+22>:	mov    0x48(%rdi),%r8
+   0xffffffff812fbf1a <+26>:	mov    %r9,%rdi
+   0xffffffff812fbf1d <+29>:	mov    %rsp,%rbp
+   0xffffffff812fbf20 <+32>:	callq  0xffffffff812fbe30 <ksys_mount>
+   0xffffffff812fbf25 <+37>:	pop    %rbp
+   0xffffffff812fbf26 <+38>:	cltq   
+   0xffffffff812fbf28 <+40>:	retq   
+End of assembler dump.
+``` 
+
+这属于调试内核了，也可以使用vscode启动`vmlinux-5.4.0-135-generic` 在线调试  
+
+```json
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "gdb内核启动",
+            "type": "cppdbg",
+            "request": "launch",
+            "miDebuggerServerAddress": "127.0.0.1:1234",
+            "program": "${workspaceFolder}/vmlinux",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${fileDirname}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "为 gdb 启用整齐打印",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description":  "将反汇编风格设置为 Intel",
+                    "text": "-gdb-set disassembly-flavor intel",
+                    "ignoreFailures": true
+                }
+            ]
+        }
+    ]
+}
+```
+
+
+
+
 
 
 
