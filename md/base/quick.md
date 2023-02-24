@@ -7,7 +7,10 @@
   - [简易模式](#简易模式)
   - [重定向](#重定向)
   - [拓展模式](#拓展模式)
-- [宏定义](#宏定义)
+- [static](#static)
+- [define/typedef](#definetypedef)
+  - [define](#define)
+  - [typedef](#typedef)
 - [运算符](#运算符)
 - [条件语句`if`](#条件语句if)
 - [main函数参数](#main函数参数)
@@ -16,12 +19,15 @@
   - [malloc/free源码分析](#mallocfree源码分析)
 - [srand/rand随机](#srandrand随机)
 - [for循环](#for循环)
+- [switch](#switch)
+- [goto](#goto)
 - [引用与指针](#引用与指针)
 - [数组](#数组-1)
 - [函数调用](#函数调用)
 - [char数组](#char数组)
 - [malloc](#malloc)
 - [struct结构体](#struct结构体)
+- [共用体 union](#共用体-union)
 - [结构体引用结构体](#结构体引用结构体)
 - [结构体数组](#结构体数组)
 - [指针操作](#指针操作)
@@ -33,7 +39,6 @@
 - [socket](#socket)
 - [dl动态库操作-dlsym](#dl动态库操作-dlsym)
 - [后记](#后记)
-
 
 
 ## helloworld
@@ -417,8 +422,105 @@ End of assembler dump.
 
 [:books: 返回目录](#目录)
 
-## 宏定义
+## static
 
+```c
+#include <stdio.h>
+ 
+/* 函数声明 */
+void func1(void);
+ 
+static int count=10;        /* 全局变量 - static 是默认的 */
+ 
+int main()
+{
+  while (count--) {
+      func1();
+  }
+  return 0;
+}
+ 
+void func1(void)
+{
+/* 'thingy' 是 'func1' 的局部变量 - 只初始化一次
+ * 每次调用函数 'func1' 'thingy' 值不会被重置。
+ */                
+  static int thingy=5;
+  thingy++;
+  printf(" thingy 为 %d ， count 为 %d\n", thingy, count);
+}
+```
+
+输出结果为:
+```
+ thingy 为 6 ， count 为 9
+ thingy 为 7 ， count 为 8
+ thingy 为 8 ， count 为 7
+ thingy 为 9 ， count 为 6
+ thingy 为 10 ， count 为 5
+ thingy 为 11 ， count 为 4
+ thingy 为 12 ， count 为 3
+ thingy 为 13 ， count 为 2
+ thingy 为 14 ， count 为 1
+ thingy 为 15 ， count 为 0
+```
+
+反汇编内容: 
+```sh
+# main函数
+10   while (count--) {
+   0x0000555555555151 <+8>:   jmp    0x555555555158 <main+15>
+   0x0000555555555158 <+15>:  mov    eax,DWORD PTR [rip+0x2eb2]        # 0x555555558010 <count>  把count的值加载到eax中
+   0x000055555555515e <+21>:  lea    edx,[rax-0x1]                     # 汇编调试视图 rax=0xa, 相当于count--
+   0x0000555555555161 <+24>:  mov    DWORD PTR [rip+0x2ea9],edx        # 0x555555558010 <count>  相当于 count = count - 1
+   0x0000555555555167 <+30>:  test   eax,eax
+   0x0000555555555169 <+32>:  jne    0x555555555153 <main+10>
+
+11       func1();
+   0x0000555555555153 <+10>:  call   0x555555555172 <func1>
+
+18 /* 'thingy' 是 'func1' 的局部变量 - 只初始化一次
+19  * 每次调用函数 'func1' 'thingy' 值不会被重置。
+20  */                
+21   static int thingy=5;
+22   thingy++;
+   0x000055555555517a <+8>:   mov    eax,DWORD PTR [rip+0x2e94]        # 0x555555558014 <thingy.2324>
+   0x0000555555555180 <+14>:  add    eax,0x1
+   0x0000555555555183 <+17>:  mov    DWORD PTR [rip+0x2e8b],eax        # 0x555555558014 <thingy.2324>
+
+23   printf(" thingy 为 %d ， count 为 %d\n", thingy, count);
+   0x0000555555555189 <+23>:  mov    edx,DWORD PTR [rip+0x2e81]        # 0x555555558010 <count>
+   0x000055555555518f <+29>:  mov    eax,DWORD PTR [rip+0x2e7f]        # 0x555555558014 <thingy.2324>
+   0x0000555555555195 <+35>:  mov    esi,eax
+   0x0000555555555197 <+37>:  lea    rdi,[rip+0xe6a]        # 0x555555556008
+   0x000055555555519e <+44>:  mov    eax,0x0
+   0x00005555555551a3 <+49>:  call   0x555555555050 <printf@plt>
+```
+
+局部静态变量sum不是向普通局部变量一样被分配在栈空间上，而是被分配到了内存中的`静态数据区`(由_BBS指定)([rip+0x2eb2])，因此它的声明期不在受栈空间的分配和释放影响，而是整个程序的运行期间，但是他的可见性(作用域)任然只存于函数内，这是由编译器来保证的。只有申请，没有被释放。  
+
+无论静态全局变量或者静态局部变量，只要申请之后，就会存在于静态数据区。静态局部变量第二次使用时，运行时，会知道该变量已经初始化  
+```sh
+-exec call sizeof(count)
+$1 = 4
+-exec x/4x 0x555555558010
+0x555555558010 <count>:	0x00000009	0x00000005	0x00000000	0x00000000
+                        # count      # thingy
+```
+
+`0x555555558010 − 0x0000555555555161 = 2eaf`  
+```sh
+=> 0x0000555555555161 <+24>:	mov    DWORD PTR [rip+0x2ea9],edx        # 0x555555558010 <count>
+   0x0000555555555167 <+30>:	test   eax,eax
+```
+
+`rip` = 0x0000555555555161  
+
+
+[:books: 返回目录](#目录)
+
+## define/typedef
+### define 
 ```c
 #include <stdio.h>
 //define a value for PIE
@@ -513,6 +615,70 @@ rip            0x5555555551df      0x5555555551df <main+86>
 ```
 
 [:books: 返回目录](#目录)
+
+### typedef
+#define 是 C 指令，用于为各种数据类型定义别名，与 typedef 类似，但是它们有以下几点不同:  
+- typedef 仅限于为类型定义符号名称，#define 不仅可以为类型定义别名，也能为数值定义别名，比如您可以定义 1 为 ONE。
+- typedef 是由编译器执行解释的，#define 语句是由预编译器进行处理的。
+
+C 语言提供了 typedef 关键字，您可以使用它来为类型取一个新的名字  
+
+```c
+typedef unsigned char BYTE;
+```
+
+```c
+#include <stdio.h>
+#include <string.h>
+ 
+typedef struct Books
+{
+   char  title[50];
+   char  author[50];
+   char  subject[100];
+   int   book_id;
+} Book;
+ 
+int main( )
+{
+   Book book;
+ 
+   strcpy( book.title, "C 教程");
+   strcpy( book.author, "Runoob"); 
+   strcpy( book.subject, "编程语言");
+   book.book_id = 12345;
+ 
+   printf( "书标题 : %s\n", book.title);
+   printf( "书作者 : %s\n", book.author);
+   printf( "书类目 : %s\n", book.subject);
+   printf( "书 ID : %d\n", book.book_id);
+ 
+   return 0;
+}
+```
+
+反汇编内容: 
+```c
+14    Book book;
+15  
+16    strcpy( book.title, "C 教程");
+=> 0x0000555555555187 <+30>:  lea    rax,[rbp-0xe0]
+   0x000055555555518e <+37>:  movabs rdx,0x8ba8e79995e62043
+   0x0000555555555198 <+47>:  mov    QWORD PTR [rax],rdx
+   0x000055555555519b <+50>:  mov    BYTE PTR [rax+0x8],0x0
+```
+
+从汇编中无法看出`typedef`的作用，是在编译过程中执行的。  
+
+typedef在语法上是一个存储类关键字！跟常见的存储类关键字(如：auto、register、static、extern)一样，在修饰一个变量时，不能同时使用一个以上的存储类关键字，否则编译会报错：  
+```sh
+typedef static char * PCHAR;
+//error: multiple storage classes in declaration of `PCHAR'
+```
+
+
+[:books: 返回目录](#目录)
+
 
 ## 运算符  
 ```c
@@ -1483,6 +1649,152 @@ $6 = (int (*)[5]) 0x7fffffffe03c
 
 [:books: 返回目录](#目录)
 
+## switch
+
+```c
+#include <stdio.h>
+ 
+int main ()
+{
+   /* 局部变量定义 */
+   char grade = 'B';
+ 
+   switch(grade)
+   {
+   case 'A' :
+      printf("很棒！\n" );
+      break;
+   case 'B' :
+   case 'C' :
+      printf("做得好\n" );
+      break;
+   case 'D' :
+      printf("您通过了\n" );
+      break;
+   case 'F' :
+      printf("最好再试一下\n" );
+      break;
+   default :
+      printf("无效的成绩\n" );
+   }
+   printf("您的成绩是 %c\n", grade );
+ 
+   return 0;
+}
+```
+
+反汇编内容是:  
+```sh
+5     /* 局部变量定义 */
+6     char grade = 'B';
+   0x0000555555555175 <+12>:  mov    BYTE PTR [rbp-0x1],0x42
+
+7   
+8     switch(grade)
+   0x0000555555555179 <+16>:  movsx  eax,BYTE PTR [rbp-0x1]     # switch是比较后在跳转，跳转之后再break就结束判断了
+   0x000055555555517d <+20>:  cmp    eax,0x46
+   0x0000555555555180 <+23>:  je     0x5555555551cf <main+102>
+   0x0000555555555182 <+25>:  cmp    eax,0x46
+   0x0000555555555185 <+28>:  jg     0x5555555551dd <main+116>
+   0x0000555555555187 <+30>:  cmp    eax,0x44
+   0x000055555555518a <+33>:  je     0x5555555551c1 <main+88>
+   0x000055555555518c <+35>:  cmp    eax,0x44
+   0x000055555555518f <+38>:  jg     0x5555555551dd <main+116>
+   0x0000555555555191 <+40>:  cmp    eax,0x41
+   0x0000555555555194 <+43>:  je     0x5555555551a5 <main+60>
+   0x0000555555555196 <+45>:  cmp    eax,0x41
+   0x0000555555555199 <+48>:  jl     0x5555555551dd <main+116>
+   0x000055555555519b <+50>:  sub    eax,0x42
+   0x000055555555519e <+53>:  cmp    eax,0x1
+   0x00005555555551a1 <+56>:  ja     0x5555555551dd <main+116>
+   0x00005555555551a3 <+58>:  jmp    0x5555555551b3 <main+74>
+
+9     {
+10    case 'A' :
+11       printf("很棒！\n" );
+   0x00005555555551a5 <+60>:  lea    rdi,[rip+0xe58]        # 0x555555556004
+   0x00005555555551ac <+67>:  call   0x555555555060 <puts@plt>
+
+12       break;
+   0x00005555555551b1 <+72>:  jmp    0x5555555551e9 <main+128>
+
+13    case 'B' :
+14    case 'C' :
+15       printf("做得好\n" );
+=> 0x00005555555551b3 <+74>:  lea    rdi,[rip+0xe54]        # 0x55555555600e
+   0x00005555555551ba <+81>:  call   0x555555555060 <puts@plt>
+
+16       break;
+   0x00005555555551bf <+86>:  jmp    0x5555555551e9 <main+128>
+```
+
+[:books: 返回目录](#目录)
+
+## goto 
+
+```c
+#include <stdio.h>
+ 
+int main ()
+{
+   /* 局部变量定义 */
+   int a = 10;
+ 
+   /* do 循环执行 */
+   LOOP:do
+   {
+      if( a == 15)
+      {
+         /* 跳过迭代 */
+         a = a + 1;
+         goto LOOP;
+      }
+      printf("a 的值： %d\n", a);
+      a++;
+     
+   }while( a < 20 );
+ 
+   return 0;
+}
+```
+
+输出结果: 
+```sh
+a 的值： 10
+a 的值： 11
+a 的值： 12
+a 的值： 13
+a 的值： 14
+a 的值： 16
+a 的值： 17
+a 的值： 18
+a 的值： 19
+```
+
+反汇编内容
+```sh
+7	 
+8	   /* do 循环执行 */
+9	   LOOP:do
+   0x000055555555515e <+21>:	nop                             # (No Operation)  可以使用于原程序中验证部分使用 nop 来填充，使验证失效  
+
+10	   {
+11	      if( a == 15)
+   0x000055555555515f <+22>:	cmp    DWORD PTR [rbp-0x4],0xf
+   0x0000555555555163 <+26>:	jne    0x55555555516b <main+34>
+
+12	      {
+13	         /* 跳过迭代 */
+14	         a = a + 1;
+=> 0x0000555555555165 <+28>:	add    DWORD PTR [rbp-0x4],0x1
+
+15	         goto LOOP;
+   0x0000555555555169 <+32>:	jmp    0x55555555515f <main+22> # jmp 指令， 和if、switch都具有跳转功能  
+
+16	      }
+```
+
+[:books: 返回目录](#目录)
 ## 引用与指针  
 
 ```c
@@ -1904,6 +2216,81 @@ $4 = 8                              # 指针的大小为8
 
 
 [:books: 返回目录](#目录)  
+
+## 共用体 union 
+
+```c
+#include <stdio.h>
+#include <string.h>
+ 
+union Data
+{
+   int i;
+   float f;
+   char  str[20];
+};
+ 
+int main( )
+{
+   union Data data;        
+   data.i = 16;
+   data.str[0] = 'H';
+   data.str[19] = 'E';
+   printf( "Memory size occupied by data : %d\n", sizeof(data));
+ 
+   return 0;
+}
+```
+
+查看data内容
+```sh
+-exec p &data
+$1 = (union Data *) 0x7fffffffe040            # data的首地址与i/str的首地址一致
+-exec p &data.i
+$2 = (int *) 0x7fffffffe040
+-exec p &data.str
+$3 = (char (*)[20]) 0x7fffffffe040
+-exec x/24xb &data                            # 但是数据区域内初始化时，有个0x80, 0x50 ?
+0x7fffffffe040:	0x00	0x00	0x00	0x00	0x00	0x00	0x00	0x00
+0x7fffffffe048:	0x80	0x50	0x55	0x55	0x55	0x55	0x00	0x00
+0x7fffffffe050:	0x50	0xe1	0xff	0xff	0xff	0x7f	0x00	0x00
+
+# data.i = 16;
+-exec x/24xb &data
+0x7fffffffe040:	0x10	0x00	0x00	0x00	0x00	0x00	0x00	0x00
+0x7fffffffe048:	0x80	0x50	0x55	0x55	0x55	0x55	0x00	0x00
+0x7fffffffe050:	0x50	0xe1	0xff	0xff	0xff	0x7f	0x00	0x00
+
+# data.str[0] = 'H';
+-exec x/24xb &data
+0x7fffffffe040:	0x48	0x00	0x00	0x00	0x00	0x00	0x00	0x00
+0x7fffffffe048:	0x80	0x50	0x55	0x55	0x55	0x55	0x00	0x00
+0x7fffffffe050:	0x50	0xe1	0xff	0xff	0xff	0x7f	0x00	0x00
+
+# data.str[19] = 'E';                    # 第20位有改变0xff->0x45  
+-exec x/24xb &data
+0x7fffffffe040:	0x48	0x00	0x00	0x00	0x00	0x00	0x00	0x00
+0x7fffffffe048:	0x80	0x50	0x55	0x55	0x55	0x55	0x00	0x00
+0x7fffffffe050:	0x50	0xe1	0xff	0x45	0xff	0x7f	0x00	0x00
+```
+
+联合体的堆栈没有初始化时，会存在脏数据的。  
+
+
+
+反汇编内容:  
+```sh
+13    union Data data;        
+14    data.i = 16;                                             # data.i 与 data.str[0] 的地址一样  
+   0x0000555555555184 <+27>:  mov    DWORD PTR [rbp-0x20],0x10
+
+15    data.str[0] = 'H';
+   0x000055555555518b <+34>:  mov    BYTE PTR [rbp-0x20],0x48
+
+16    data.str[19] = 'E';
+   0x000055555555518f <+38>:  mov    BYTE PTR [rbp-0xd],0x45
+```
+
 
 ## 结构体引用结构体   
 
