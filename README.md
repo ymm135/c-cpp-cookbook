@@ -18,4 +18,5 @@
     - #### [汇编语言 基于x86处理器(原书第7版) 随书代码](https://github.com/ymm135/Irvine)  
     - #### [自制4bit cpu](https://github.com/ymm135/TD4-4BIT-CPU) 
   - ### **逆向** 
-    - #### [Hook程序](md/extra/hook-app.md)  
+    - #### [逆向工程原理](md/extra/reverse.md)  
+    - #### [Hook原理及示例](md/extra/hook-app.md)  
