@@ -20,3 +20,5 @@
   - ### **逆向** 
     - #### [逆向工程原理](md/extra/reverse.md)  
     - #### [Hook原理及示例](md/extra/hook-app.md)  
+  - ### **工具**  
+    - #### [机器码转汇编/C](md/extra/transition.md)  

@@ -2647,6 +2647,25 @@ int main (void)
 15    }
 ```
 
+got.plt  
+```sh
+-exec disass 0x5555555550d0
+Dump of assembler code for function open@plt:
+   0x00005555555550d0 <+0>:	endbr64 
+   0x00005555555550d4 <+4>:	bnd jmp QWORD PTR [rip+0x2ef5]        # 0x555555557fd0 <open@got.plt>
+   0x00005555555550db <+11>:	nop    DWORD PTR [rax+rax*1+0x0]
+End of assembler dump.
+
+
+-exec disass 0x555555557fd0
+Dump of assembler code for function open@got.plt:
+   0x0000555555557fd0 <+0>:	add    BYTE PTR [rbx-0x11],ah
+   0x0000555555557fd3 <+3>:	idiv   edi
+   0x0000555555557fd5 <+5>:	jg     0x555555557fd7 <open@got.plt+7>
+   0x0000555555557fd7 <+7>:	add    BYTE PTR [rax],al
+End of assembler dump.
+```
+
 `open`源码分析`glibc-2.31/sysdeps/unix/sysv/linux/open64.c:37`  
 ```c
 /* Open FILE with access OFLAG.  If O_CREAT or O_TMPFILE is in OFLAG,
@@ -2856,6 +2875,9 @@ long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
 | open_tree | 428 | 无 | fs/namespace.c | 
 
 ### syscall原理  
+
+```
+```
 
 [:books: 返回目录](#目录)  
 
