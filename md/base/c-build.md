@@ -15,6 +15,7 @@
   - [文件基本信息`file`](#文件基本信息file)
   - [查看符号表`nm`](#查看符号表nm)
   - [列出动态链接库`ldd`](#列出动态链接库ldd)
+  - [`ldconfig`](#ldconfig)
   - [`objdump`](#objdump)
 - [Makefile](#makefile)
   - [入门](#入门-1)
@@ -29,6 +30,7 @@
   - [寄存器分类](#寄存器分类)
 - [GDB](#gdb)
   - [gdb gui](#gdb-gui)
+  - [gdb常用指令](#gdb常用指令)
 
 
 ## 简介
@@ -366,6 +368,76 @@ ldd -v hello
 	/lib/x86_64-linux-gnu/libc.so.6:
 		ld-linux-x86-64.so.2 (GLIBC_2.3) => /lib64/ld-linux-x86-64.so.2
 		ld-linux-x86-64.so.2 (GLIBC_PRIVATE) => /lib64/ld-linux-x86-64.so.2
+```
+
+### `ldconfig`  
+- configure dynamic linker run-time bindings  
+
+主要是在默认搜寻目录`/lib`和`/usr/lib`以及动态库配置文件`/etc/ld.so.con`f内所列的目录下，搜索出可共享的动态链接库（格式如lib*.so*）,进而创建出动态装入程序(`ld.so`)所需的连接和缓存文件，缓存文件默认为`/etc/ld.so.cache`，此文件保存已排好序的动态链接库名字列表。linux下的共享库机制采用了类似高速缓存机制，将库信息保存在`/etc/ld.so.cache`，程序连接的时候首先从这个文件里查找，然后再到`ld.so.conf`的路径中查找。为了让动态链接库为系统所共享，需运行动态链接库的管理命令`ldconfig`，此执行程序存放在/sbin目录下。
+
+```sh
+Usage: ldconfig.real [OPTION...]
+Configure Dynamic Linker Run Time Bindings.
+
+  -c, --format=FORMAT        Format to use: new (default), old, or compat
+  -C CACHE                   Use CACHE as cache file
+  -f CONF                    Use CONF as configuration file
+  -i, --ignore-aux-cache     Ignore auxiliary cache file
+  -l                         Manually link individual libraries.
+  -n                         Only process directories specified on the command
+                             line.  Don't build cache.
+  -N                         Don't build cache
+  -p, --print-cache          Print cache
+  -r ROOT                    Change to and use ROOT as root directory
+  -v, --verbose              Generate verbose messages
+  -X                         Don't update symbolic links
+  -?, --help                 Give this help list
+      --usage                Give a short usage message
+  -V, --version              Print program version
+
+Mandatory or optional arguments to long options are also mandatory or optional
+for any corresponding short options.
+
+For bug reporting instructions, please see:
+<https://bugs.launchpad.net/ubuntu/+source/glibc/+bugs>.
+```
+
+查看动态库是否存在`ldconfig -v`?  
+```sh
+ldconfig -v | grep -i kill
+/sbin/ldconfig.real: Can't stat /usr/local/lib/x86_64-linux-gnu: No such file or directory
+/sbin/ldconfig.real: Path `/usr/lib/x86_64-linux-gnu' given more than once
+/sbin/ldconfig.real: Path `/usr/lib32' given more than once
+/sbin/ldconfig.real: Path `/lib/x86_64-linux-gnu' given more than once
+/sbin/ldconfig.real: Path `/usr/lib/x86_64-linux-gnu' given more than once
+/sbin/ldconfig.real: Path `/usr/lib' given more than once
+	libkill_virus.so -> libkill_virus.so
+/sbin/ldconfig.real: /lib/x86_64-linux-gnu/ld-2.31.so is the dynamic linker, ignoring
+
+/sbin/ldconfig.real: /lib32/ld-2.31.so is the dynamic linker, ignoring
+```
+
+查看缓存`ldconfig -p`  
+```sh
+root@netvine:~/virus-api-master# ldconfig -p
+584 libs found in cache `/etc/ld.so.cache'
+	libz3.so.4 (libc6,x86-64) => /lib/x86_64-linux-gnu/libz3.so.4
+	libz3.so (libc6,x86-64) => /lib/x86_64-linux-gnu/libz3.so
+	libzstd.so.1 (libc6,x86-64) => /lib/x86_64-linux-gnu/libzstd.so.1
+	libz.so.1 (libc6,x86-64) => /lib/x86_64-linux-gnu/libz.so.1
+	libz.so (libc6,x86-64) => /lib/x86_64-linux-gnu/libz.so
+	libyaml-0.so.2 (libc6,x86-64) => /lib/x86_64-linux-gnu/libyaml-0.so.2
+	libxvdfmerge.so (libc6,x86-64) => /opt/virus-api/bin/libxvdfmerge.so
+	libxtables.so.12 (libc6,x86-64) => /lib/x86_64-linux-gnu/libxtables.so.12
+	libxslt.so.1 (libc6,x86-64) => /lib/x86_64-linux-gnu/libxslt.so.1
+	libxshmfence.so.1 (libc6,x86-64) => /lib/x86_64-linux-gnu/libxshmfence.so.1
+	libxml2.so.2 (libc6,x86-64) => /lib/x86_64-linux-gnu/libxml2.so.2
+	libxmlsec1.so.1 (libc6,x86-64) => /lib/x86_64-linux-gnu/libxmlsec1.so.1
+	libxmlsec1-openssl.so.1 (libc6,x86-64) => /lib/x86_64-linux-gnu/libxmlsec1-openssl.so.1
+	libxmlb.so.1 (libc6,x86-64) => /lib/x86_64-linux-gnu/libxmlb.so.1
+	libxkbfile.so.1 (libc6,x86-64) => /lib/x86_64-linux-gnu/libxkbfile.so.1
+	libxcb.so.1 (libc6,x86-64) => /lib/x86_64-linux-gnu/libxcb.so.1
+
 ```
 
 ### `objdump`
