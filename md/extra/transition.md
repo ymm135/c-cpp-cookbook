@@ -8,6 +8,7 @@
 
 ## 机器码转汇编
 
+
 ## 机器码转C  
 
 [github retdec](https://github.com/avast/retdec)  
@@ -16,7 +17,17 @@
 
 安装依赖
 ```sh
-sudo apt-get install libssl-dev
+sudo apt-get install build-essential cmake git openssl libssl-dev python3 autoconf automake libtool pkg-config m4 zlib1g-dev upx doxygen graphviz
+```
+
+编译
+```sh
+cd retdec
+mkdir build && cd build
+mkdir -p /usr/local/retdec
+cmake .. -DCMAKE_INSTALL_PREFIX=/usr/local/retdec
+make -j4
+make install
 ```
 
 ### retdec-decompiler 软件使用及效果  

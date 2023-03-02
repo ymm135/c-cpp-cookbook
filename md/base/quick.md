@@ -1,6 +1,7 @@
 - # 知识速览
 - ### [Learning-C demo实例](https://github.com/h0mbre/Learning-C)  
 ## 目录
+- [目录](#目录)
 - [helloworld](#helloworld)
 - [变量声明](#变量声明)
 - [输入与输出](#输入与输出)
@@ -36,6 +37,7 @@
   - [意义](#意义)
   - [Syscall对照表](#syscall对照表)
   - [syscall原理](#syscall原理)
+  - [plt/got/syscall示例](#pltgotsyscall示例)
 - [socket](#socket)
 - [dl动态库操作-dlsym](#dl动态库操作-dlsym)
 - [后记](#后记)
@@ -2876,11 +2878,143 @@ long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
 
 ### syscall原理  
 
-```
-```
+从用户态到内核态切换可以通过三种方式，或者说会导致从用户态切换到内核态的操作: 
+- 1. 系统调用，系统调用本身就是中断，但是`软件中断`，跟硬中断不同。系统调用机制是使用了操作系统为用户特别开放的一个中断来实现，如 Linux 的 `int 80h` 中断。  
+- 2. 异常：如果当前进程运行在用户态，如果这个时候发生了异常事件，会触发由当前运行进程切换到处理此异常的内核相关进程中  
+- 3. 外围设备中断：外围设备完成用户请求的操作之后，会向CPU发出中断信号，这时CPU会转去处理对应的中断处理程序。  
+
+当发生用户态到内核态的切换时，会发生如下过程（本质上是从`用户程序`切换到`内核程序`）  
+- 1. 设置处理器至内核态。
+- 2. 保存当前寄存器（栈指针、程序计数器、通用寄存器）。
+- 3. 将栈指针设置指向内核栈地址。
+- 4. 将`程序计数器`设置为一个事先约定的地址上，该地址上存放的是系统调用处理程序的`起始地址`。  
+
+而之后从内核态返回用户态时，又会进行类似的工作。  
+
+- I/O 频繁发生内核态和用户态切换，怎么解决。
+
+首先要同意这个说法，即I/O会导致系统调用，从而导致内核态和用户态之间的切换。因为对I/O设备的操作是发生在内核态。那如何减少因为I/O导致的系统调用呢？答案是：使用户进程缓冲区。下面解释一下原因  
+
+<br>
+<div align=center>
+    <img src="../../res/image/base/io-op-1.png" width="80%"></img>  
+</div>
+<br>
+
+你看一些程序在读取文件时，会先申请一块内存数组，称为`buffer`，然后每次调用read，读取设定字节长度的数据，写入buffer。之后的程序都是从buffer中获取数据，当buffer使用完后，在进行下一次调用，填充buffer。所以说：用户缓冲区的目的就是是为了减少系统调用次数，从而降低操作系统在用户态与核心态切换所耗费的时间。除了在进程中设计缓冲区，内核也有自己的缓冲区。  
+
+syscall调用流程:  
+Tips 1： 用户空间的方法`xxx`，对应系统调用层方法则是`sys_xxx`；   
+Tips 2： `unistd.h`文件记录着系统调用中断号的信息。  
+Tips 3： 宏定义`SYSCALL_DEFINEx(xxx,…)`，展开后对应的方法则是`sys_xxx`；   
+Tips 4： 方法参数的个数x，对应于`SYSCALL_DEFINEx`。  
+
+Syscall是通过`中断`方式实现的，ARM平台上通过`swi`中断来实现系统调用，实现从用户态切换到内核态，发送软中断swi时，从`中断向量表`中查看跳转代码，其中异常向量表定义在文件`/kernelarch/arm/kernel/entry-armv.S`(汇编语言文件)。当执行系统调用时会根据系统调用号从系统调用表中来查看`目标函数`的入口地址，在`calls.S`文件中声明了入口地址信息。    
+
 
 [:books: 返回目录](#目录)  
 
+### plt/got/syscall示例  
+
+设置系统资源
+```sh
+ulimit -c unlimited
+```
+`test.c`
+```c
+#include <stdio.h>
+#include <stdlib.h>
+
+int func1(void)
+{
+        return 1;
+}
+
+int main(void)
+{
+        int a, b;
+        a = func1();
+        b = rand();
+        return a + b;
+}
+```
+
+编译指令: `gcc -g test.c -o test`  
+
+gdb调试
+```sh
+(gdb) b test.c:13
+Breakpoint 1 at 0x116c: file test.c, line 13.
+(gdb) disas
+Dump of assembler code for function main:
+   0x0000555555555158 <+0>:	endbr64 
+   0x000055555555515c <+4>:	push   %rbp
+   0x000055555555515d <+5>:	mov    %rsp,%rbp
+   0x0000555555555160 <+8>:	sub    $0x10,%rsp
+   0x0000555555555164 <+12>:	callq  0x555555555149 <func1>
+   0x0000555555555169 <+17>:	mov    %eax,-0x8(%rbp)
+=> 0x000055555555516c <+20>:	callq  0x555555555050 <rand@plt>
+   0x0000555555555171 <+25>:	mov    %eax,-0x4(%rbp)
+   0x0000555555555174 <+28>:	mov    -0x8(%rbp),%edx
+   0x0000555555555177 <+31>:	mov    -0x4(%rbp),%eax
+   0x000055555555517a <+34>:	add    %edx,%eax
+   0x000055555555517c <+36>:	leaveq 
+   0x000055555555517d <+37>:	retq   
+End of assembler dump.
+(gdb) si
+0x0000555555555050 in rand@plt ()
+(gdb) disas
+Dump of assembler code for function rand@plt:
+=> 0x0000555555555050 <+0>:	endbr64 
+   0x0000555555555054 <+4>:	bnd jmpq *0x2f75(%rip)        # 0x555555557fd0 <rand@got.plt>
+   0x000055555555505b <+11>:	nopl   0x0(%rax,%rax,1)
+End of assembler dump.
+(gdb) disas 0x555555557fd0
+Dump of assembler code for function rand@got.plt:
+   0x0000555555557fd0 <+0>:	adc    %ch,-0x1f(%rbp)
+   0x0000555555557fd3 <+3>:	idiv   %edi
+   0x0000555555557fd5 <+5>:	jg     0x555555557fd7 <rand@got.plt+7>
+   0x0000555555557fd7 <+7>:	add    %al,(%rax)
+End of assembler dump.
+(gdb) si
+0x0000555555555054 in rand@plt ()
+(gdb) disas
+Dump of assembler code for function rand@plt:
+   0x0000555555555050 <+0>:	endbr64 
+=> 0x0000555555555054 <+4>:	bnd jmpq *0x2f75(%rip)        # 0x555555557fd0 <rand@got.plt>
+   0x000055555555505b <+11>:	nopl   0x0(%rax,%rax,1)
+End of assembler dump.
+(gdb) si
+rand () at rand.c:26
+26	rand.c: No such file or directory.
+(gdb) disas
+Dump of assembler code for function rand:
+=> 0x00007ffff7e16d10 <+0>:	endbr64                       # si进入后，已经能够看到rand执行的最终地址为: 
+   0x00007ffff7e16d14 <+4>:	sub    $0x8,%rsp
+   0x00007ffff7e16d18 <+8>:	callq  0x7ffff7e16800 <__random>
+   0x00007ffff7e16d1d <+13>:	add    $0x8,%rsp
+   0x00007ffff7e16d21 <+17>:	retq 
+```
+
+通过汇编断点调试发现，最终调用的地址为`0x00007ffff7e16d10`,存在于文件`rand.c:26`,其实通过查看`0x555555557fd0 <rand@got.plt>`的地址已经说明问题了。  
+```sh
+(gdb) x 0x555555557fd0
+0x555555557fd0 <rand@got.plt>:	0xf7e16d10
+
+# 之前把0x555555557fd0当做函数处理，其实就是一段数据地址`0xf7e16d10`  
+(gdb) disas 0x555555557fd0
+Dump of assembler code for function rand@got.plt:
+   0x0000555555557fd0 <+0>:	adc    %ch,-0x1f(%rbp)
+   0x0000555555557fd3 <+3>:	idiv   %edi
+   0x0000555555557fd5 <+5>:	jg     0x555555557fd7 <rand@got.plt+7>
+   0x0000555555557fd7 <+7>:	add    %al,(%rax)
+```
+
+整个流程为:`callq  0x555555555050 <rand@plt>` => `bnd jmpq *0x2f75(%rip)        # 0x555555557fd0 <rand@got.plt>` => `x 0x555555557fd0 = 0xf7e16d10` => `rand`  
+
+两个汇编指令:
+- `bnd jmpq`  主要是`jmpq *0x2f75(%rip)` 以rip里的值作为地址，取其中保存的8字节内容作为目的地址`jump`过去  
+- `nopl   0x0`   1. 通过 nop 指令的填充 2. 清除由上一个算术逻辑指令设置的 flag 位 3. 对于原程序中验证部分使用 nop 来填充，使验证失效  
 
 ## socket 
 
