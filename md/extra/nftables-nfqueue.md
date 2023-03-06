@@ -17,7 +17,7 @@ apt install nftables
 `ip`
 ```sh
 table ip netvine-table {
-	chain base-rule-chain {
+	chain ids-rule-chain {
 		type filter hook prerouting priority filter; policy accept;
 		iifname "br0" log prefix "nft-rule-test " queue num 0
 	}
@@ -29,7 +29,7 @@ table ip netvine-table {
 `netdev`
 ```sh
 table netdev netvine-table {
-	chain base-rule-chain {
+	chain ids-rule-chain {
 		type filter hook ingress device enp0s5 priority filter; policy accept;
 		log prefix "nftables-test" queue num 0-3
 	}

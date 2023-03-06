@@ -121,9 +121,78 @@ ptrace可以实现调试程序、跟踪；但是一个进程只能被一个进�
 
 示例:  
 首先需要知道一些函数在目标进程的地址，下面是已知pid获取libc基地址（读取`/proc/pid/maps`），和函数地址(`dlsym`)
-```c
-
+```sh
+7f71ead32000-7f71ead3f000 r--p 00000000 fd:00 3283239                    /usr/lib/x86_64-linux-gnu/libm-2.31.so
+7f71ead3f000-7f71eade6000 r-xp 0000d000 fd:00 3283239                    /usr/lib/x86_64-linux-gnu/libm-2.31.so
+7f71eade6000-7f71eae7f000 r--p 000b4000 fd:00 3283239                    /usr/lib/x86_64-linux-gnu/libm-2.31.so
+7f71eae7f000-7f71eae80000 r--p 0014c000 fd:00 3283239                    /usr/lib/x86_64-linux-gnu/libm-2.31.so
+7f71eae80000-7f71eae81000 rw-p 0014d000 fd:00 3283239                    /usr/lib/x86_64-linux-gnu/libm-2.31.so
+7f71eae81000-7f71eae86000 r--p 00000000 fd:00 3283351                    /usr/lib/x86_64-linux-gnu/libudev.so.1.6.17
+7f71eae86000-7f71eaea2000 r-xp 00005000 fd:00 3283351                    /usr/lib/x86_64-linux-gnu/libudev.so.1.6.17
+...
 ```
+
+- #### 动态注入指令 示例
+
+用过gdb等调试器的人都知道,debugger工具可以给程序打断点和单步运行等. 这些功能其实也能用ptrace实现, 其原理就是ATTACH并追踪正在运行的进程, 读取其指令寄存器`IR`(32bit系统为%eip, 64位系统为%rip)的内容, 备份后替换成目标指令,再使其返回运行;此时被追踪进程就会执行我们替换的指令. 运行完注入的指令之后, 我们再恢复原进程的IR,从而达到改变原程序运行逻辑的目的. `talk is cheap`, 先写个循环打印的程序:  
+
+```c
+//victim.c
+int main() {
+    while(1) {
+        printf("Hello, ptrace! [pid:%d]\n", getpid());
+        sleep(2);
+    }
+    return 0;
+}
+```
+
+程序运行后会每隔2秒会打印到终端.然后再另外编写一个程序:
+```c
+//attacker.c
+int main(int argc, char *argv[]) {
+    if(argc!=2) {
+        printf("Usage: %s pid\n", argv[0]);
+        return 1;
+    }
+    pid_t victim = atoi(argv[1]);
+    struct user_regs_struct regs;
+    /* int 0x80, int3 */
+    unsigned char code[] = {0xcd,0x80,0xcc,0x00,0,0,0,0};
+    char backup[8];
+    ptrace(PTRACE_ATTACH, victim, NULL, NULL);
+    long inst;
+
+    wait(NULL);
+    ptrace(PTRACE_GETREGS, victim, NULL, &regs);
+    inst = ptrace(PTRACE_PEEKTEXT, victim, regs.rip, NULL);
+    printf("Victim: EIP:0x%llx INST: 0x%lx\n", regs.rip, inst);
+
+    /* Copy instructions into a backup variable */
+    getdata(victim, regs.rip, backup, 7);
+    /* Put the breakpoint */
+    putdata(victim, regs.rip, code, 7);
+    /* Let the process continue and execute the int 3 instruction */
+    ptrace(PTRACE_CONT, victim, NULL, NULL);
+
+    wait(NULL);
+    printf("Press Enter to continue ptraced process.\n");
+    getchar();
+    putdata(victim, regs.rip, backup, 7);
+    ptrace(PTRACE_SETREGS, victim, NULL, &regs);
+
+    ptrace(PTRACE_CONT, victim, NULL, NULL);
+    ptrace(PTRACE_DETACH, victim, NULL, NULL);
+    return 0;
+}
+```
+
+运行后会将一直循环输出的进程暂停, 再按回车使得进程恢复循环输出. 其中putdata和getdata在上文中已经介绍过了. 我们用之前替换寄存器内容的方法,将%rip的内容修改为int 3的机器码, 使得对应进程暂停执行; 恢复寄存器状态时使用的是PTRACE_SETREGS参数. 值得一提的是对于不同的处理器架构, 其使用的寄存器名称也不尽相同, 在不同的机器上允许时代码也要作相应的修改.
+
+这里注入的代码长度只有8个字节, 而且是用shellcode的格式注入, 但实际中我们可以在目标进程中动态加载库文件(.so), 包括标准库文件(如libc.so)和我们自己编译的库文件, 从而可以通过传递函数地址和参数来进行复杂的注入,限于篇幅暂不细说. 不过需要注意的是动态链接库挂载的地址是动态确定的, 可以在/proc/$pid/maps文件中查看, 其中$pid为进程id.
+
+
+
 
 ### **PLT重定向劫持Hook**  
 
