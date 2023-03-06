@@ -19,10 +19,12 @@ apt install nftables
 table ip netvine-table {
 	chain base-rule-chain {
 		type filter hook prerouting priority filter; policy accept;
-		iifname "enp0s6-enp0s7" log prefix "nftables-test" queue num 0
+		iifname "br0" log prefix "nft-rule-test " queue num 0
 	}
 }
 ```
+
+> prerouting 也可以是  forward
 
 `netdev`
 ```sh
@@ -166,7 +168,7 @@ int main(int argc, char **argv)
 ^Ctcpdump: Unable to write output: Interrupted system call
 ```
 
-## 创建网桥触发规则  
+## linux命令创建网桥触发规则  
 
 创建网桥的普通模式：  
 ```sh
@@ -185,5 +187,99 @@ Mar  3 15:00:23 matrix kernel: [ 5879.059317] nftables-testIN=enp0s6-enp0s7 OUT=
 
 > 从结果可以看出，网桥模式也算是路由(route)  
 
+这样的前提是两个网卡都是up状态，也就是有物理接入才行。  
+## docker搭建网桥触发规则  
+
+国内镜像安装docker
+```sh
+curl -fsSL https://get.docker.com | bash -s docker --mirror Aliyun
+```
+
+把某个网卡，比如`enp4s0`的流量全部镜像到容器内，方法就是自己创建一个基于`enp4s0`的网桥，这样来自于`enp4s0`的数据都会转发到容器内。  
+
+
+[参考文章](https://yeasy.gitbook.io/docker_practice/advanced_network/bridge)  
+
+docker服务启动时，会有一个默认网桥
+```shell
+docker0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500
+        inet 172.17.0.1  netmask 255.255.0.0  broadcast 172.17.255.255
+        inet6 fe80::42:cbff:feca:454f  prefixlen 64  scopeid 0x20<link>
+        ether 02:42:cb:ca:45:4f  txqueuelen 0  (Ethernet)
+        RX packets 1568  bytes 17640614 (16.8 MiB)
+        RX errors 0  dropped 0  overruns 0  frame 0
+        TX packets 3844  bytes 452141 (441.5 KiB)
+        TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
+```
+
+容器配置端口的的转发规则:  
+```shell
+$ iptables -nvL
+
+Chain DOCKER (1 references)
+ pkts bytes target     prot opt in     out     source               destination         
+    0     0 ACCEPT     tcp  --  !docker0 docker0  0.0.0.0/0            172.17.0.2           tcp dpt:6379
+    0     0 ACCEPT     tcp  --  !docker0 docker0  0.0.0.0/0            172.17.0.2           tcp dpt:3306
+   18  1152 ACCEPT     tcp  --  !docker0 docker0  0.0.0.0/0            172.17.0.2           tcp dpt:443
+```
+
+如果想通过网口流量直接转发`enp4s0->docker->ids-container`  
+
+除了默认的 `docker0` 网桥，用户也可以指定网桥来连接各个容器。并且可以删除。  
+在启动 Docker 服务的时候，使用 `-b BRIDGE`或`--bridge=BRIDGE` 来指定使用的网桥。  
+
+
+删除网卡
+```shell
+$ sudo ip link set dev br0 down
+$ sudo brctl delbr br0
+```
+
+设置网卡为混杂模式
+```shell
+sudo ifconfig enp4s0 promisc
+```
+
+```shell
+# 创建网桥
+sudo brctl addbr br0
+
+# 添加物理网卡
+sudo brctl addif br0 enp4s0
+
+# 设置up状态
+sudo ip link set dev br0 up
+
+# 查看网卡状态
+ip addr show br0
+
+# 关闭docker原网桥
+sudo systemctl stop docker
+sudo ifconfig docker0 down
+sudo brctl delbr docker0
+
+# 修改docker默认网桥 
+
+vim /etc/docker/daemon.json
+{
+  "bridge": "br0"
+}
+
+sudo systemctl start docker
+```
+
+
 ## 网桥原理  
+[参考资料](https://www.cnblogs.com/still-smile/p/14932131.html)  
+
+<br>
+<div align=center>
+    <img src="../../res/image/extra/bridge-1.png" width="80%"></img>  
+</div>
+<br>
+
+Docker 在启动时，会创建一个名为 `docker0` 的 网桥，并且把其 IP 地址设置为 `172.17.0.1/16`（私有 IP 地址）。然后使用虚拟设备对 `veth-pair` 来将容器与 `网桥` 连接起来，如上图所示。而对于 `172.17.0.0/16` 网段的数据包，Docker 会定义一条 `iptables NAT` 的规则来将这些数据包的 `IP` 地址转换成公网 `IP` 地址，然后通过真实网络接口（如上图的 ens160 接口）发送出去。  
+
+
+
 
