@@ -2,7 +2,9 @@
 
 - [环境搭建](#环境搭建)
 - [数据包读取](#数据包读取)
-- [创建网桥触发规则](#创建网桥触发规则)
+- [linux命令创建网桥](#linux命令创建网桥)
+- [docker搭建网桥触发规则](#docker搭建网桥触发规则)
+- [虚拟网卡搭建网桥触发规则](#虚拟网卡搭建网桥触发规则)
 - [网桥原理](#网桥原理)
 
 
@@ -168,7 +170,7 @@ int main(int argc, char **argv)
 ^Ctcpdump: Unable to write output: Interrupted system call
 ```
 
-## linux命令创建网桥触发规则  
+## linux命令创建网桥
 
 创建网桥的普通模式：  
 ```sh
@@ -266,6 +268,503 @@ vim /etc/docker/daemon.json
 }
 
 sudo systemctl start docker
+```
+
+## 虚拟网卡搭建网桥触发规则  
+
+总体思路是创建一个虚拟网卡，然后把物理网卡和虚拟网卡搭一个网桥，软件从虚拟网卡中读取数据，网桥负责通过nftable规律数据。  
+
+tun/tap 驱动程序实现了虚拟网卡的功能，tun表示虚拟的是点对点设备，tap表示虚拟的是以太网设备，这两种设备针对网络包实施不同的封装。 利用tun/tap 驱动，可以将tcp/ip协议栈处理好的网络分包传给任何一个使用tun/tap驱动的进程，由进程重新处理后再发到物理链路中。   
+
+确认内核是否有tun模块: 
+```sh
+modinfo tun
+name:           tun
+filename:       (builtin)
+alias:          devname:net/tun
+alias:          char-major-10-200
+license:        GPL
+author:         (C) 1999-2004 Max Krasnyansky <maxk@qualcomm.com>
+description:    Universal TUN/TAP device driver
+```
+
+创建网卡
+```sh
+# 安装工具
+apt install uml-utilities
+
+# 创建
+tunctl -t tap0 -u root
+
+ifconfig tap0 up
+
+# 删除
+tunctl -d tap0
+
+# 从网桥中移除
+brctl delif br0 tap0
+```
+
+> tap0一直处于down状态，无法up  
+查看详情: `strace ifconfig tap0 up`  
+```sh
+strace ifconfig tap0 up
+openat(AT_FDCWD, "/usr/share/locale-langpack/en.utf8/LC_MESSAGES/net-tools.mo", O_RDONLY) = -1 ENOENT (No such file or directory)
+openat(AT_FDCWD, "/usr/share/locale-langpack/en/LC_MESSAGES/net-tools.mo", O_RDONLY) = -1 ENOENT (No such file or directory)
+ioctl(4, SIOCGIFFLAGS, {ifr_name="tap0", ifr_flags=IFF_BROADCAST|IFF_MULTICAST}) = 0
+ioctl(4, SIOCSIFFLAGS, {ifr_name="tap0", ifr_flags=IFF_UP|IFF_BROADCAST|IFF_RUNNING|IFF_MULTICAST}) = 0
+exit_group(0)                           = ?
++++ exited with 0 +++
+```
+
+可以设置网卡
+```sh
+ifconfig tap0 192.168.0.1  netmask 255.255.255.0 promisc
+```
+
+在物理网卡与虚拟网卡之前创建网桥
+```sh
+# 清理
+ip link set dev br0 down
+brctl delbr br0
+
+# 网卡设置为混杂模式
+sudo ifconfig enp0s6 promisc
+
+# 创建网桥
+sudo brctl addbr br0
+
+# 添加物理网卡
+sudo brctl addif br0 enp0s6
+sudo brctl addif br0 tap0
+
+# 设置up状态
+sudo ip link set dev br0 up
+
+# 查看网卡状态
+ip addr show br0
+
+# 查看网桥中包含的网卡
+brctl show
+
+> bridge name	bridge id		STP enabled	interfaces
+> br0		8000.001c4250a337	no		enp0s7
+> docker0		8000.02423784b7c1	no
+```
+
+规则:
+```sh
+table ip netvine-table {
+	chain ids-rule-chain {
+		type filter hook prerouting priority filter; policy accept;
+		iifname "br0" ip saddr != { 10.211.55.4, 10.211.55.2 }  log prefix "nft-rule-test " accept
+	}
+}
+```
+
+iptable规则实现转发
+- `-p 协议（protocol）`  
+- `-s 源地址（source）`  
+- `-d 目的地址（destination）`
+- `-j 执行目标（jump to target）`
+- `-i 输入接口（input interface）`
+- `-o 输出（out interface）`
+- `--append  -A chain		Append to chain`
+- 
+
+设置网桥ip及设置nat规则
+```sh
+# ip
+ifconfig br1 10.25.2.1 netmask 255.255.255.0 promisc
+```
+
+设置物理网卡的方法
+```sh
+sudo modprobe dummy
+
+sudo ip link add eth0 type dummy
+
+ip link show eth0
+
+# 可以不设置
+sudo ifconfig eth0 hw ether C8:D7:4A:4E:47:51
+
+# 可以不设置
+sudo ip addr add 192.168.1.100/24 brd + dev eth0 label eth0:0
+
+sudo ip link set dev eth0 up
+```
+
+> 这样创建的网卡才行，tap虚拟网卡无法使用.  
+
+<br>
+
+## eBPF/xdp 二层转发功能  
+
+通过网络层无法实现二层转发，只要需要通过ip地址查询mac，然后实现转发，是三层的转发，但是ip地址变了，还是需要二层链路层的转发，相当于交换机。  
+
+eXpress Data Path，Linux 提供的高性能网络数据路径。允许网络包在进入内核协议栈之前就进行处理。XDP 与 bcc-tools 都是基于 eBPF 机制实现的。XDP 应用程序一般是专业的网络程序，如 IDS（入侵检测系统）、DDoS 防御、cilium 容器网络插件等。  
+
+
+<br>
+<div align=center>
+    <img src="../../res/image/extra/xdp-1.png" width="90%"></img>  
+</div>
+<br>
+
+从图中可以看出，可以使用`Forward`功能实现转发。不然其他的路都会送往协议栈.  
+
+另外一个重要内容就是`maps`  
+
+<br>
+<div align=center>
+    <img src="../../res/image/extra/xdp-2.png" width="80%"></img>  
+</div>
+<br>
+
+- #### 用户态
+1. 用户编写 eBPF 程序，可以使用 eBPF 汇编或者 eBPF 特有的 C 语言来编写。
+2. 使用 LLVM/CLang 编译器，将 eBPF 程序编译成 eBPF 字节码。
+3. 调用 `bpf()` 系统调用把 eBPF 字节码加载到内核。
+
+- #### 内核态
+1. 当用户调用 `bpf()` 系统调用把 eBPF 字节码加载到内核时，内核先会对 eBPF 字节码进行安全验证。
+2. 使用 `JIT`（Just In Time）技术将 eBPF 字节编译成本地机器码（Native Code）。
+3. 然后根据 eBPF 程序的功能，将 eBPF 机器码挂载到内核的不同运行路径上（如用于跟踪内核运行状态的 eBPF 程序将会挂载在 kprobes 的运行路径上）。当内核运行到这些路径时，就会触发执行相应路径上的 eBPF 机器码。
+
+
+
+### ubuntu环境搭建
+- Linux kernel 5.0以上版本
+- 安装LLVM和Clang  `sudo apt install llvm clang`
+- 安装libelf-dev和libbpf-dev库 `sudo apt install libelf-dev libbpf-dev`  
+
+[官方安装依赖说明](https://github.com/xdp-project/xdp-tutorial/blob/master/setup_dependencies.org)  
+
+安装依赖
+```sh
+sudo apt install clang llvm libelf-dev libpcap-dev gcc-multilib build-essential 
+
+sudo apt install linux-tools-$(uname -r)
+
+# linux kernel header
+sudo apt install linux-headers-$(uname -r)
+
+# tools
+sudo apt install linux-tools-common linux-tools-generic
+sudo apt install tcpdump
+```
+
+下载BPF Samples  
+https://github.com/xdp-project/xdp-tutorial  
+```sh
+# 下载代码
+git clone https://github.com/xdp-project/xdp-tutorial.git
+
+# 根目录执行
+git submodule update --init
+
+# 根目录执行
+make
+```
+
+进入测试demo`xdp-tutorial/tracing03-xdp-debug-print`  
+
+
+```c
+/* SPDX-License-Identifier: GPL-2.0 */
+#include <linux/bpf.h>
+#include <linux/if_ether.h>
+#include <linux/if_packet.h>
+#include <linux/if_vlan.h>
+#include <linux/ip.h>
+#include <linux/in.h>
+#include <stdbool.h>
+#include <bpf/bpf_helpers.h>
+#include <bpf/bpf_endian.h>
+
+#define bpf_printk(fmt, ...)                                    \
+({                                                              \
+	char ____fmt[] = fmt;                                   \
+	bpf_trace_printk(____fmt, sizeof(____fmt),              \
+                         ##__VA_ARGS__);                        \
+})
+
+/* to u64 in host order */
+static inline __u64 ether_addr_to_u64(const __u8 *addr)
+{
+	__u64 u = 0;
+	int i;
+
+	for (i = ETH_ALEN - 1; i >= 0; i--)
+		u = u << 8 | addr[i];
+	return u;
+}
+
+SEC("xdp")
+int  xdp_prog_simple(struct xdp_md *ctx)
+{
+	void *data = (void *)(long)ctx->data;
+	void *data_end = (void *)(long)ctx->data_end;
+	struct ethhdr *eth = data;
+	__u64 offset = sizeof(*eth);
+
+	if ((void *)eth + offset > data_end)
+		return 0;
+
+	bpf_printk("src: %llu, dst: %llu, proto: %u\n",
+		   ether_addr_to_u64(eth->h_source),
+		   ether_addr_to_u64(eth->h_dest),
+		   bpf_ntohs(eth->h_proto));
+
+	return XDP_PASS;
+}
+
+char _license[] SEC("license") = "GPL";
+```
+
+Makefile
+```sh
+# SPDX-License-Identifier: (GPL-2.0 OR BSD-2-Clause)
+
+XDP_TARGETS := xdp_prog_kern
+USER_TARGETS := trace_read
+
+COPY_LOADER = xdp_loader
+
+LLC ?= llc
+CLANG ?= clang
+CC := gcc
+
+LIBBPF_DIR = ../libbpf/src/
+COMMON_DIR = ../common/
+
+include $(COMMON_DIR)/common.mk
+COMMON_OBJS := $(COMMON_DIR)/common_params.o
+```
+
+```sh
+# 使用以下命令编译代码
+clang -O2 -target bpf -c xdp_prog_kern.c -o xdp_prog_kern.o
+
+# 将编译好的xdp_prog_kern.o文件加载到内核中
+sudo ip link set dev enp0s6 xdp object xdp_prog_kern.o sec xdp  
+
+# 查看是否加载xdp程序
+ip link show enp0s6  // prog/xdp id 13 tag 649153f4d32aeb29 jited
+
+# 卸载
+ip link set dev enp0s6 xdp off
+```
+
+加载到内核报错:  
+```sh
+BTF debug data section '.BTF' rejected: Invalid argument (22)!
+ - Length:       738
+Verifier analysis:
+
+magic: 0xeb9f
+version: 1
+flags: 0x0
+hdr_len: 24
+type_off: 0
+type_len: 256
+str_off: 256
+str_len: 458
+btf_total_size: 738
+[1] PTR (anon) type_id=2
+[2] STRUCT xdp_md size=20 vlen=5
+	data type_id=3 bits_offset=0
+	data_end type_id=3 bits_offset=32
+	data_meta type_id=3 bits_offset=64
+	ingress_ifindex type_id=3 bits_offset=96
+	rx_queue_index type_id=3 bits_offset=128
+[3] TYPEDEF __u32 type_id=4
+[4] INT unsigned int size=4 bits_offset=0 nr_bits=32 encoding=(none)
+[5] FUNC_PROTO (anon) return=6 args=(1 ctx)
+[6] INT int size=4 bits_offset=0 nr_bits=32 encoding=SIGNED
+[7] FUNC xdp_prog_simple type_id=5 vlen != 0
+
+Program section 'prog' not found in ELF file!
+Error fetching program/map!
+```
+
+> ip link set dev [device name] xdp obj xdp-drop-world.o sec [section name]  // section 就是 SEC("xdp") 的名称  
+> ip link set dev enp0s5 xdp obj xdp_prog_kern.o sec xdp  
+
+输出日志`sudo cat /sys/kernel/debug/tracing/trace`或者`sudo ./trace_read`:
+```sh
+src: 0:1c:42:0:0:8 dst: 0:1c:42:5a:b0:7d proto: 2048
+```
+
+### 网卡数据镜像
+
+```sh
+alias t='sudo /root/work/xdp-tutorial/testenv/testenv.sh'
+```
+
+准备环境:
+```sh
+t setup -n left --legacy-ip
+```
+
+```c
+#include <linux/bpf.h>
+#include <linux/if_ether.h>
+#include <linux/ip.h>
+#include <linux/in.h>
+
+#include <bpf/bpf_helpers.h>
+
+struct bpf_map_def SEC("maps") output_map = {
+    .type = BPF_MAP_TYPE_DEVMAP,
+    .key_size = sizeof(int),
+    .value_size = sizeof(int),
+    .max_entries = 64,
+};
+
+SEC("xdp")
+int xdp_prog(struct xdp_md *ctx) {
+    void *data_end = (void *)(long)ctx->data_end;
+    void *data = (void *)(long)ctx->data;
+
+    struct ethhdr *eth = data;
+    if (eth + 1 > data_end) {
+        return XDP_DROP;
+    }
+
+    struct iphdr *ip = data + sizeof(*eth);
+    if (ip + 1 > data_end) {
+        return XDP_DROP;
+    }
+
+    // 判断数据包是否是 IPv4 协议，如果不是则丢弃
+    if (eth->h_proto != htons(ETH_P_IP)) {
+        return XDP_DROP;
+    }
+
+    // 将数据包重定向到指定的输出接口（在这里是 ifindex = 2）
+    int ifindex = 2;
+    return bpf_redirect_map(&output_map, ifindex, 0);
+}
+
+char __license[] SEC("license") = "GPL";
+```
+
+> ip link show 查看网卡的索引  
+
+
+编译完成后，查看`objdump -x xdp_prog_kern.o`信息:  
+
+```sh
+objdump -x xdp_prog_kern.o 
+
+xdp_prog_kern.o:     file format elf64-little
+xdp_prog_kern.o
+architecture: UNKNOWN!, flags 0x00000011:
+HAS_RELOC, HAS_SYMS
+start address 0x0000000000000000
+
+Sections:
+Idx Name          Size      VMA               LMA               File off  Algn
+  0 .text         00000000  0000000000000000  0000000000000000  00000040  2**2
+                  CONTENTS, ALLOC, LOAD, READONLY, CODE
+  1 xdp           000000d0  0000000000000000  0000000000000000  00000040  2**3
+                  CONTENTS, ALLOC, LOAD, RELOC, READONLY, CODE
+  2 maps          00000014  0000000000000000  0000000000000000  00000110  2**2
+                  CONTENTS, ALLOC, LOAD, DATA
+  3 license       00000004  0000000000000000  0000000000000000  00000124  2**0
+                  CONTENTS, ALLOC, LOAD, DATA
+  4 .llvm_addrsig 00000003  0000000000000000  0000000000000000  000001f0  2**0
+                  CONTENTS, READONLY, EXCLUDE
+SYMBOL TABLE:
+0000000000000000 l    df *ABS*	0000000000000000 xdp_prog_kern.c
+00000000000000c0 l       xdp	0000000000000000 LBB0_4
+0000000000000000 g     O license	0000000000000004 __license
+0000000000000000         *UND*	0000000000000000 htons
+0000000000000000 g     O maps	0000000000000014 output_map
+0000000000000000 g     F xdp	00000000000000d0 xdp_prog
+
+
+RELOCATION RECORDS FOR [xdp]:
+OFFSET           TYPE              VALUE 
+0000000000000070 UNKNOWN           htons
+0000000000000090 UNKNOWN           output_map
+```
+
+> 可以看到`xdp`与`map`段，但是段的作用是什么?  
+
+查看`section header`通过指令 `readelf -l xdp_prog_kern.o` 
+```sh
+readelf -l xdp_prog_kern.o 
+
+There are no program headers in this file.
+root@matrix:~/work/xdp-tutorial/sample# readelf -S xdp_prog_kern.o 
+There are 9 section headers, starting at offset 0x260:
+
+Section Headers:
+  [Nr] Name              Type             Address           Offset
+       Size              EntSize          Flags  Link  Info  Align
+  [ 0]                   NULL             0000000000000000  00000000
+       0000000000000000  0000000000000000           0     0     0
+  [ 1] .strtab           STRTAB           0000000000000000  000001f3
+       000000000000006d  0000000000000000           0     0     1
+  [ 2] .text             PROGBITS         0000000000000000  00000040
+       0000000000000000  0000000000000000  AX       0     0     4
+  [ 3] xdp               PROGBITS         0000000000000000  00000040
+       00000000000000d0  0000000000000000  AX       0     0     8
+  [ 4] .relxdp           REL              0000000000000000  000001d0
+       0000000000000020  0000000000000010           8     3     8
+  [ 5] maps              PROGBITS         0000000000000000  00000110
+       0000000000000014  0000000000000000  WA       0     0     4
+  [ 6] license           PROGBITS         0000000000000000  00000124
+       0000000000000004  0000000000000000  WA       0     0     1
+  [ 7] .llvm_addrsig     LOOS+0xfff4c03   0000000000000000  000001f0
+       0000000000000003  0000000000000000   E       8     0     1
+  [ 8] .symtab           SYMTAB           0000000000000000  00000128
+       00000000000000a8  0000000000000018           1     3     8
+Key to Flags:
+  W (write), A (alloc), X (execute), M (merge), S (strings), I (info),
+  L (link order), O (extra OS processing required), G (group), T (TLS),
+  C (compressed), x (unknown), o (OS specific), E (exclude),
+  p (processor specific)
+```
+
+不同的 `section` 可能分属不同的类型，而不同的类型自然包含着不同含义的数据，起到不同的作用，有一部分 section 针对链接过程而存在，有一部分针对加载过程而存在.  
+
+针对加载过程的 `section` 数据分为两种:  
+- 一种是需要被加载器进行解析，给加载过程提供辅助信息 
+- 另一种就是程序代码和数据，加载器直接将其 copy 到对应的虚拟地址即可，二进制代码和数据由 CPU 执行.  
+对于需要解析的 section 数据，自然需要规定在它组成和解析的时候遵循特定的格式，这样链接器或者加载器才能按照格式对它进行解析，从程序中的角度来看这就涉及到不同的数据结构.  
+
+加载程序`sudo ip link set dev enp0s6 xdp object xdp_prog_kern.o sec xdp `时提示错误
+
+```sh
+Prog section 'xdp' rejected: Invalid argument (22)!
+ - Type:         6
+ - Instructions: 26 (0 over limit)
+ - License:      GPL
+
+Verifier analysis:
+
+call to invalid destination
+processed 0 insns (limit 1000000) max_states_per_insn 0 total_states 0 peak_states 0 mark_read 0
+
+Error fetching program/map!
+```
+
+编译错误及告警也会影响，使用Makefile编译发现问题，修改后就可以加载了.  
+
+```sh
+error: implicit declaration of function 'htons' is invalid in C99 [-Werror,-Wimplicit-function-declaration]
+```
+
+修改代码: `#include <netinet/in.h>  // # <linux/in.h>`  
+
+
+规则:
+```sh
+
 ```
 
 
