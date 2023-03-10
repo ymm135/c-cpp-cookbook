@@ -767,6 +767,50 @@ error: implicit declaration of function 'htons' is invalid in C99 [-Werror,-Wimp
 
 ```
 
+### python http服务
+
+```sh
+$ python3 -m http.server -b 10.211.55.45 9080 
+Serving HTTP on 10.211.55.45 port 9080 (http://10.211.55.45:9080/) ...
+
+10.211.55.2 - - [09/Mar/2023 14:10:38] "GET / HTTP/1.1" 200 -
+10.211.55.2 - - [09/Mar/2023 14:10:38] code 404, message File not found
+10.211.55.2 - - [09/Mar/2023 14:10:38] "GET /favicon.ico HTTP/1.1" 404 -
+10.211.55.2 - - [09/Mar/2023 14:11:00] "GET /.bash_history HTTP/1.1" 200 -
+```
+直接可以文件下载， python服务位置: `/usr/lib/python3.8/http/server.py`  
+
+通过tcpdump过滤端口查看报文
+```sh
+tcpdump -i enp0s6 port 9080
+```
+
+报文
+```sh
+14:24:22.864189 IP 10.211.55.2.53239 > matrix.9080: Flags [SEW], seq 3442087008, win 65535, options [mss 1460,nop,wscale 6,nop,nop,TS val 2512115741 ecr 0,sackOK,eol], length 0
+14:24:22.864353 IP matrix.9080 > 10.211.55.2.53239: Flags [S.E], seq 2829168985, ack 3442087009, win 65160, options [mss 1460,sackOK,TS val 2897013303 ecr 2512115741,nop,wscale 7], length 0
+```
+
+首先查看原始物理网卡能不能收到数据，然后再去查看镜像的网卡是否能收到数据。之前tcpreplay不一定是物理层面的，可能是内核的中转，发现无法达到xdp点。  
+
+xdp处理后，tcpdump也无法抓到包，因为tcpdump也是在内核抓包的，但是xdp在网卡驱动处拦截了。  
+
+
+XDP提供的重定向机制是基于`出接口`（`egress`）进行操作的。这意味着，只有在数据包要经过的出接口是指定的接口时，重定向才会生效。
+
+具体来说，当XDP程序通过调用`bpf_redirect()`函数实现重定向时，它将检查当前数据包要经过的`出接口`是否与`指定的接口`相同。如果是，则该数据包将被重定向到指定的接口；否则，该数据包将被丢弃。
+
+这种出接口的限制是为了确保重定向机制不会影响其他接口的正常工作。在实践中，这种机制使得XDP可以通过重定向机制实现多种功能，例如网络嗅探、网络过滤、负载均衡等，而不会对网络性能产生不良影响。
+
+需要注意的是，出接口的判断是基于数据包到达XDP程序的`接口`，而不是目标IP地址的接口。这意味着，如果要重定向到的目标IP地址与当前接口不同，仍然可以通过指定正确的出接口实现重定向。
+
+当使用XDP将数据包从一个网络接口重定向到另一个网络接口时，数据包的流向确实会从eth0到eth1。但是，如果使用tcpdump在eth1上抓取数据包，可能会发现并没有抓到重定向过来的数据包。这是因为XDP会在硬件层面直接将数据包从一个网络接口转发到另一个网络接口，而不经过内核协议栈。因此，tcpdump在eth1上无法抓到这些数据包。
+
+解决这个问题的方法是在XDP程序中添加一些额外的逻辑来把数据包同时复制到用户态，然后再使用tcpdump在用户态抓取数据包。在XDP程序中可以使用`bpf_perf_event_output`或`bpf_trace_printk`等函数将数据包复制到用户态中。具体的步骤如下
+
+可以使用`bpftool`查看/创建map，另外可以保存数据.  
+
+
 
 ## 网桥原理  
 [参考资料](https://www.cnblogs.com/still-smile/p/14932131.html)  
@@ -780,5 +824,51 @@ error: implicit declaration of function 'htons' is invalid in C99 [-Werror,-Wimp
 Docker 在启动时，会创建一个名为 `docker0` 的 网桥，并且把其 IP 地址设置为 `172.17.0.1/16`（私有 IP 地址）。然后使用虚拟设备对 `veth-pair` 来将容器与 `网桥` 连接起来，如上图所示。而对于 `172.17.0.0/16` 网段的数据包，Docker 会定义一条 `iptables NAT` 的规则来将这些数据包的 `IP` 地址转换成公网 `IP` 地址，然后通过真实网络接口（如上图的 ens160 接口）发送出去。  
 
 
+同 `tap/tun`、`veth-pair` 一样，`Bridge` 也是一种虚拟网络设备，所以具备虚拟网络设备的所有特性，比如可以配置 `IP`、`MAC` 等。
+
+除此之外，Bridge 还是一个交换机，具有交换机所有的功能。
+
+对于普通的网络设备，就像一个管道，只有两端，数据从一端进，从另一端出。而 Bridge 有多个端口，数据可以从多个端口进，从多个端口出。 
+
+Bridge 的这个特性让它可以接入其他的网络设备，比如物理设备、虚拟设备、VLAN 设备等。Bridge 通常充当主设备，其他设备为从设备，这样的效果就等同于物理交换机的端口连接了一根网线。比如下面这幅图通过 Bridge 连接两个 VM 的 tap 虚拟网卡和物理网卡 eth0。
+
+<br>
+<div align=center>
+    <img src="../../res/image/extra/br-1.png" width="60%"></img>  
+</div>
+<br>
+
+- ### Bridge 常用使用场景
+Bridge 设备通常就是结合 tap/tun、veth-pair 设备用于虚拟机、容器网络里面。这两种网络，在数据传输流程上还有些许不同，我们简单来看下：
+
+首先是虚拟机网络，虚拟机一般通过 tap/tun 设备将虚拟机网卡同宿主机里的 Bridge 连接起来，完成同主机和跨主机的通信。如下图所示：
+
+<br>
+<div align=center>
+    <img src="../../res/image/extra/br-2.png" width="90%"></img>  
+</div>
+<br>
+
+虚拟机发出的数据包通过 `tap` 设备先到达 `br0`，然后经过 `eth0` 发送到物理网络中，数据包不需要经过主机的的协议栈，效率是比较高的。
+
+其次是容器网络（容器网络有多种引申的形式，这里我们只说 Bridge 网络），容器网络和虚拟机网络类似，不过一般是使用 `veth-pair` 来连接容器和主机，因为在主机看来，容器就是一个个被隔离的 `namespace`，用 veth-pair 更有优势。如下图所示：
+
+<br>
+<div align=center>
+    <img src="../../res/image/extra/br-3.png" width="90%"></img>  
+</div>
+<br>
+
+容器的 Bridge 网络通常配置成内网形式，要出外网需要走 `NAT`，所以它的数据传输不像虚拟机的桥接形式可以直接跨过协议栈，而是必须经过协议栈，通过 `NAT` 和 `ip_forward `功能从物理网卡转发出去，因此，从性能上看，Bridge 网络虚拟机要优于容器。
 
 
+Bridge 是偏低级的工具，更高级的工具是 Open vSwitch，这个工具后面再详说。
+
+
+tap/tun/veth
+
+<br>
+<div align=center>
+    <img src="../../res/image/extra/br-4.png" width="100%"></img>  
+</div>
+<br>
