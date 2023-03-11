@@ -5,6 +5,10 @@
 - [linux命令创建网桥](#linux命令创建网桥)
 - [docker搭建网桥触发规则](#docker搭建网桥触发规则)
 - [虚拟网卡搭建网桥触发规则](#虚拟网卡搭建网桥触发规则)
+- [eBPF/xdp 二层转发功能](#ebpfxdp-二层转发功能)
+  - [ubuntu环境搭建](#ubuntu环境搭建)
+  - [网卡数据镜像](#网卡数据镜像)
+  - [python http服务](#python-http服务)
 - [网桥原理](#网桥原理)
 
 
@@ -455,6 +459,10 @@ sudo apt install linux-tools-common linux-tools-generic
 sudo apt install tcpdump
 ```
 
+```sh
+alias t='sudo /root/xdp-tutorial/testenv/testenv.sh'
+```
+
 下载BPF Samples  
 https://github.com/xdp-project/xdp-tutorial  
 ```sh
@@ -599,53 +607,90 @@ src: 0:1c:42:0:0:8 dst: 0:1c:42:5a:b0:7d proto: 2048
 
 ### 网卡数据镜像
 
-```sh
-alias t='sudo /root/work/xdp-tutorial/testenv/testenv.sh'
-```
-
 准备环境:
 ```sh
 t setup -n left --legacy-ip
 ```
 
 ```c
+/* SPDX-License-Identifier: GPL-2.0 */
+
 #include <linux/bpf.h>
 #include <linux/if_ether.h>
 #include <linux/ip.h>
-#include <linux/in.h>
+#include <netinet/in.h> // # <linux/in.h>
 
 #include <bpf/bpf_helpers.h>
+#include <bpf/bpf_endian.h>
 
-struct bpf_map_def SEC("maps") output_map = {
-    .type = BPF_MAP_TYPE_DEVMAP,
-    .key_size = sizeof(int),
-    .value_size = sizeof(int),
-    .max_entries = 64,
-};
+// The parsing helper functions from the packet01 lesson have moved here
+#include "../common/parsing_helpers.h"
+
+/* Defines xdp_stats_map */
+#include "../common/xdp_stats_kern_user.h"
+#include "../common/xdp_stats_kern.h"
+
+#ifndef memcpy
+#define memcpy(dest, src, n) __builtin_memcpy((dest), (src), (n))
+#endif
+
+#define bpf_printk(fmt, ...)                       \
+    ({                                             \
+        char ____fmt[] = fmt;                      \
+        bpf_trace_printk(____fmt, sizeof(____fmt), \
+                         ##__VA_ARGS__);           \
+    })
+
+/* to u64 in host order */
+static inline __u64 ether_addr_to_u64(const __u8 *addr)
+{
+    __u64 u = 0;
+    int i;
+
+    for (i = ETH_ALEN - 1; i >= 0; i--)
+        u = u << 8 | addr[i];
+    return u;
+}
 
 SEC("xdp")
-int xdp_prog(struct xdp_md *ctx) {
+int xdp_prog(struct xdp_md *ctx)
+{
     void *data_end = (void *)(long)ctx->data_end;
     void *data = (void *)(long)ctx->data;
 
-    struct ethhdr *eth = data;
-    if (eth + 1 > data_end) {
-        return XDP_DROP;
-    }
+    struct ethhdr *eth;
+    struct hdr_cursor nh;
+    int eth_type;
+    int action = XDP_PASS;
+    unsigned ifindex = 6;
 
-    struct iphdr *ip = data + sizeof(*eth);
-    if (ip + 1 > data_end) {
-        return XDP_DROP;
-    }
+    // unsigned char src[ETH_ALEN] = {0x78,0x09,0xd6,0x95,0x2e,0xee};
+    unsigned char dst[ETH_ALEN] = {0xee, 0x2e, 0x95, 0xd6, 0x09, 0x78};
 
-    // 判断数据包是否是 IPv4 协议，如果不是则丢弃
-    if (eth->h_proto != htons(ETH_P_IP)) {
-        return XDP_DROP;
-    }
+    /* These keep track of the next header type and iterator pointer */
+    nh.pos = data;
 
-    // 将数据包重定向到指定的输出接口（在这里是 ifindex = 2）
-    int ifindex = 2;
-    return bpf_redirect_map(&output_map, ifindex, 0);
+    /* Parse Ethernet and IP/IPv6 headers */
+    eth_type = parse_ethhdr(&nh, data_end, &eth);
+    if (eth_type == -1)
+        goto out;
+
+    /* Set a proper destination address */
+    // memcpy(eth->h_source, src, ETH_ALEN);
+    memcpy(eth->h_dest, dst, ETH_ALEN);
+
+    // 将数据包重定向到指定的输出接口
+    bpf_printk("26119 xdp msg ./src: %llu, dst: %llu, proto: %u\n",
+               ether_addr_to_u64(eth->h_source),
+               ether_addr_to_u64(eth->h_dest),
+               bpf_ntohs(eth->h_proto));
+
+    action = bpf_redirect(ifindex, 0);
+    // action = xdp_stats_record_action(ctx, XDP_REDIRECT);
+
+    bpf_printk("161 xdp debug msg action:%d \n", action);
+out:
+    return xdp_stats_record_action(ctx, action);
 }
 
 char __license[] SEC("license") = "GPL";
