@@ -685,7 +685,7 @@ int xdp_prog(struct xdp_md *ctx)
                ether_addr_to_u64(eth->h_dest),
                bpf_ntohs(eth->h_proto));
 
-    action = bpf_redirect(ifindex, 0);
+    action = bpf_redirect(ifindex, 0);   
     // action = xdp_stats_record_action(ctx, XDP_REDIRECT);
 
     bpf_printk("161 xdp debug msg action:%d \n", action);
@@ -697,7 +697,15 @@ char __license[] SEC("license") = "GPL";
 ```
 
 > ip link show 查看网卡的索引  
+> bpf_redirect(ifindex, 0);  相当于二层交换机了，ifindex 是交换机的出接口mac地址，配置的dstmac地址就是下一跳  
 
+`bpf_redirect`重定向还是发向下一跳.  
+
+<br>
+<div align=center>
+    <img src="../../res/image/extra/br-switch.jpeg" width="65%"></img>  
+</div>
+<br>
 
 编译完成后，查看`objdump -x xdp_prog_kern.o`信息:  
 
@@ -807,10 +815,23 @@ error: implicit declaration of function 'htons' is invalid in C99 [-Werror,-Wimp
 修改代码: `#include <netinet/in.h>  // # <linux/in.h>`  
 
 
-规则:
-```sh
 
-```
+首先查看原始物理网卡能不能收到数据，然后再去查看镜像的网卡是否能收到数据。之前tcpreplay不一定是物理层面的，可能是内核的中转，发现无法达到xdp点。  
+
+xdp处理后，tcpdump也无法抓到包，因为tcpdump也是在内核抓包的，但是xdp在网卡驱动处拦截了。  
+
+
+XDP提供的重定向机制是基于`出接口`（`egress`）进行操作的。这意味着，只有在数据包要经过的出接口是指定的接口时，重定向才会生效。
+
+具体来说，当XDP程序通过调用`bpf_redirect()`函数实现重定向时，它将检查当前数据包要经过的`出接口`是否与`指定的接口`相同。如果是，则该数据包将被重定向到指定的接口；否则，该数据包将被丢弃。
+
+这种出接口的限制是为了确保重定向机制不会影响其他接口的正常工作。在实践中，这种机制使得XDP可以通过重定向机制实现多种功能，例如网络嗅探、网络过滤、负载均衡等，而不会对网络性能产生不良影响。
+
+需要注意的是，出接口的判断是基于数据包到达XDP程序的`接口`，而不是目标IP地址的接口。这意味着，如果要重定向到的目标IP地址与当前接口不同，仍然可以通过指定正确的出接口实现重定向。
+
+当使用XDP将数据包从一个网络接口重定向到另一个网络接口时，数据包的流向确实会从eth0到eth1。但是，如果使用tcpdump在eth1上抓取数据包，可能会发现并没有抓到重定向过来的数据包。这是因为XDP会在硬件层面直接将数据包从一个网络接口转发到另一个网络接口，而不经过内核协议栈。因此，tcpdump在eth1上无法抓到这些数据包。
+
+解决这个问题的方法是在XDP程序中添加一些额外的逻辑来把数据包同时复制到用户态，然后再使用tcpdump在用户态抓取数据包。在XDP程序中可以使用`bpf_perf_event_output`或`bpf_trace_printk`等函数将数据包复制到用户态中。具体的步骤如下
 
 ### python http服务
 
@@ -835,25 +856,6 @@ tcpdump -i enp0s6 port 9080
 14:24:22.864189 IP 10.211.55.2.53239 > matrix.9080: Flags [SEW], seq 3442087008, win 65535, options [mss 1460,nop,wscale 6,nop,nop,TS val 2512115741 ecr 0,sackOK,eol], length 0
 14:24:22.864353 IP matrix.9080 > 10.211.55.2.53239: Flags [S.E], seq 2829168985, ack 3442087009, win 65160, options [mss 1460,sackOK,TS val 2897013303 ecr 2512115741,nop,wscale 7], length 0
 ```
-
-首先查看原始物理网卡能不能收到数据，然后再去查看镜像的网卡是否能收到数据。之前tcpreplay不一定是物理层面的，可能是内核的中转，发现无法达到xdp点。  
-
-xdp处理后，tcpdump也无法抓到包，因为tcpdump也是在内核抓包的，但是xdp在网卡驱动处拦截了。  
-
-
-XDP提供的重定向机制是基于`出接口`（`egress`）进行操作的。这意味着，只有在数据包要经过的出接口是指定的接口时，重定向才会生效。
-
-具体来说，当XDP程序通过调用`bpf_redirect()`函数实现重定向时，它将检查当前数据包要经过的`出接口`是否与`指定的接口`相同。如果是，则该数据包将被重定向到指定的接口；否则，该数据包将被丢弃。
-
-这种出接口的限制是为了确保重定向机制不会影响其他接口的正常工作。在实践中，这种机制使得XDP可以通过重定向机制实现多种功能，例如网络嗅探、网络过滤、负载均衡等，而不会对网络性能产生不良影响。
-
-需要注意的是，出接口的判断是基于数据包到达XDP程序的`接口`，而不是目标IP地址的接口。这意味着，如果要重定向到的目标IP地址与当前接口不同，仍然可以通过指定正确的出接口实现重定向。
-
-当使用XDP将数据包从一个网络接口重定向到另一个网络接口时，数据包的流向确实会从eth0到eth1。但是，如果使用tcpdump在eth1上抓取数据包，可能会发现并没有抓到重定向过来的数据包。这是因为XDP会在硬件层面直接将数据包从一个网络接口转发到另一个网络接口，而不经过内核协议栈。因此，tcpdump在eth1上无法抓到这些数据包。
-
-解决这个问题的方法是在XDP程序中添加一些额外的逻辑来把数据包同时复制到用户态，然后再使用tcpdump在用户态抓取数据包。在XDP程序中可以使用`bpf_perf_event_output`或`bpf_trace_printk`等函数将数据包复制到用户态中。具体的步骤如下
-
-可以使用`bpftool`查看/创建map，另外可以保存数据.  
 
 
 
