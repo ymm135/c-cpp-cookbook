@@ -1,6 +1,7 @@
 - # 二三层转发实例讲解
 
 [华为-二三层转发实例讲解](https://support.huawei.com/enterprise/zh/knowledge/EKB1001157897)  
+[60 天通过 CCNA 考试](https://ccna60d.xfoss.com/)  
 
 ## 环境搭建
 

@@ -254,9 +254,64 @@ EXPORT_SYMBOL_GPL(sys_read);
 ```
 
 
+### systemtap  
+
+[官网地址](https://sourceware.org/systemtap/)  
+
+#### ubuntu环境搭建
+```sh
+apt-get install -y build-essential gettext elfutils libdw-dev python wget tar 
+```
+
+下载源码 https://sourceware.org/ftp/systemtap/releases/  
+```sh
+wget https://sourceware.org/ftp/systemtap/releases/systemtap-4.8.tar.gz
+```
+
+编译
+```sh
+cd systemtap-4.8/
+./configure 
+make -j4
+make install
+```
+
+编写个tap
+```sh
+# stap -ve 'probe begin { log("hello world") exit () }'
+
+Pass 1: parsed user script and 484 library scripts using 109164virt/102128res/6100shr/96128data kb, in 250usr/30sys/280real ms.
+Pass 2: analyzed script: 1 probe, 2 functions, 0 embeds, 0 globals using 110748virt/103896res/6300shr/97712data kb, in 10usr/0sys/7real ms.
+Pass 3: translated to C into "/tmp/stapYXfNc2/stap_de562f769926c93749aa6a120b8fcd8f_1136_src.c" using 110748virt/103896res/6300shr/97712data kb, in 0usr/0sys/0real ms.
+Pass 4: compiled C into "stap_de562f769926c93749aa6a120b8fcd8f_1136.ko" in 13480usr/1880sys/8873real ms.
+Pass 5: starting run.
+hello world
+Pass 5: run completed in 10usr/50sys/460real ms.
+```
+
+```sh
+# stap -c df -e 'probe syscall.* { if (target()==pid()) log(name." ".argstr) }'
+```
 
 
+`sendto.stp`
+```sh
+probe syscall.sendto.call {
+	if (pid() == $1) {
+		printf("pid:[%d], sendto begin: long_arg[%d] \n", pid(), long_arg(1))
+		s = -1
+	}
+}
 
+probe syscall.send.call {
+    if (pid() == $1) {
+        printf("pid:[%d], sendto begin: long_arg[%d] \n", pid(), long_arg(1))
+        s = -1
+    }   
+}
+```
+
+运行指令:`stap -B CONFIG_MODVERSIONS=y -vg sendto.stp 41054`
 
 
 

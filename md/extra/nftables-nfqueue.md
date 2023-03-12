@@ -11,7 +11,6 @@
   - [python http服务](#python-http服务)
 - [网桥原理](#网桥原理)
 
-
 ## 环境搭建
 
 ```sh
@@ -55,6 +54,11 @@ tcpreplay的依赖
 sudo apt-get install build-essential autogen libpcap-dev cmake openssl libssl-dev python3 autoconf automake libtool pkg-config m4 zlib1g-dev 
 ```
 
+
+nftables作用:  
+`nftables` is a subsystem of the Linux kernel providing filtering and classification of network packets/datagrams/frames.  
+
+`nftables` replaces the legacy `iptables` portions of `Netfilter`. Among the advantages of nftables over iptables is less code duplication and easier extension to new protocols. nftables is configured via the user-space utility nft, while legacy tools are configured via the utilities iptables, ip6tables, arptables and ebtables frameworks.
 
 ## 数据包读取  
 ```c
@@ -273,6 +277,126 @@ vim /etc/docker/daemon.json
 
 sudo systemctl start docker
 ```
+
+### docker启动ubuntu容器作为出接口  
+
+```sh
+docker pull ubuntu:20.04
+
+docker run --privileged -itd -v data:/data -p 8080:8080 --name ub ubuntu:20.04 /usr/sbin/init
+
+# 进入容器
+docker exec -it ub bash
+
+// 因为镜像中没有包缓存，所以需要运行：
+# apt-get update
+
+// 安装curl 
+# apt-get -y install curl
+# apt-get install -y bash-completion
+# apt install net-tools
+# apt install tcpdump 
+```
+
+网卡信息
+```sh
+ifconfig
+eth0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500
+        inet 172.17.0.2  netmask 255.255.0.0  broadcast 172.17.255.255
+        ether 02:42:ac:11:00:02  txqueuelen 0  (Ethernet)
+        RX packets 23049  bytes 33162159 (33.1 MB)
+        RX errors 0  dropped 0  overruns 0  frame 0
+        TX packets 7818  bytes 435544 (435.5 KB)
+        TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
+
+# 宿主机多了一个 veth05841b9 网卡  
+6: veth05841b9@if5: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master docker0 state UP group default 
+    link/ether 9e:31:da:e4:2b:0b brd ff:ff:ff:ff:ff:ff link-netnsid 0
+    inet6 fe80::9c31:daff:fee4:2b0b/64 scope link 
+       valid_lft forever preferred_lft forever
+```
+
+在宿主机执行` ping 172.17.0.2 `, 查看镜像接口数据  
+```sh
+tcpdump -i eth0 -vvnnXS
+
+11:59:00.807078 IP (tos 0x0, ttl 64, id 57335, offset 0, flags [none], proto ICMP (1), length 84)
+    172.17.0.2 > 172.17.0.1: ICMP echo reply, id 1, seq 4, length 64
+	0x0000:  4500 0054 dff7 0000 4001 428c ac11 0002  E..T....@.B.....
+	0x0010:  ac11 0001 0000 55b5 0001 0004 84be 0d64  ......U........d
+	0x0020:  0000 0000 4d50 0c00 0000 0000 1011 1213  ....MP..........
+	0x0030:  1415 1617 1819 1a1b 1c1d 1e1f 2021 2223  .............!"#
+	0x0040:  2425 2627 2829 2a2b 2c2d 2e2f 3031 3233  $%&'()*+,-./0123
+	0x0050:  3435 3637                                4567
+```
+
+首先尝试往docker网桥打入网络数据，看容器是否能够收到?  
+
+```sh
+# 宿主机， 发送ftp包
+tcpreplay -i docker0 ftp-test.pcap 
+
+# ubuntu镜像内收到, eth0 没有开混杂模式，也是可以收到数据的  
+tcpdump -i eth0 -vvnnXS
+12:19:03.092497 IP (tos 0x0, ttl 128, id 19331, offset 0, flags [DF], proto TCP (6), length 50)
+    192.168.10.21.60573 > 192.168.10.25.21: Flags [P.], cksum 0x3b40 (correct), seq 3557710849:3557710859, ack 2091964120, win 16417, length 10: FTP, length: 10
+	USER lfz
+	0x0000:  4500 0032 4b83 4000 8006 19c4 c0a8 0a15  E..2K.@.........
+	0x0010:  c0a8 0a19 ec9d 0015 d40e 5c01 7cb0 d6d8  ..........\.|...
+	0x0020:  5018 4021 3b40 0000 5553 4552 206c 667a  P.@!;@..USER.lfz
+	0x0030:  0d0a                                     ..
+```
+
+目前通过xdp重定向，把所有的数据都发送到docker0网卡，但是容器eth0仍然收不到数据。  
+
+先把物理网卡enp0s6和veth网卡都加到docker0网桥中，现在修改网络数据的目的mac地址为veth，然后使用tcpdump重发流量到enp0s6中，看veth能否收到数据?  
+
+```sh
+docker0的网卡信息
+4: docker0: <BROADCAST,MULTICAST,PROMISC,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default 
+    link/ether 02:42:39:7b:8d:4e brd ff:ff:ff:ff:ff:ff
+    inet 172.17.0.1/16 brd 172.17.255.255 scope global docker0
+
+# 如果不指定cache文件, 将把所有包的源mac地址和目的mac地址都改写成
+tcprewrite --enet-dmac=9e:31:da:e4:2b:0b -i ftp-test.pcap -o ftp-test-modity.pcap
+
+# 向enp0s,veth发送数据 都没有反应
+tcpreplay -i enp0s6 ftp-test-modity.pcap
+tcpreplay -i veth ftp-test-modity.pcap              # tcpdump ip host 192.168.10.21 -i eth0 -nnvvXS 容器eth0能收到数据，但是mac地址没有变化  
+
+# 收不到数据
+tcpdump ip host 192.168.10.21 -i docker0 -nnvvS
+```
+
+最终还是收不到的。自己新建一个网桥试试
+```sh
+# 修改成容器eth0的mac地址
+tcprewrite --enet-dmac=02:42:ac:11:00:02 -i ftp-test.pcap -o ftp-test-modity.pcap
+
+# 向enp0s发送数据
+tcpreplay -i veth ftp-test-modity.pcap
+
+tcpdump ip host 192.168.10.21 -i docker0 -nnvvS
+# 修改后的数据往，docker网桥收到的转发的数据有,并且都是request 
+Frame 25: 64 bytes on wire (512 bits), 64 bytes captured (512 bits) on interface sshdump, id 0
+Ethernet II, Src: 02:42:ac:11:00:02 (02:42:ac:11:00:02), Dst: 02:42:39:7b:8d:4e (02:42:39:7b:8d:4e)
+Internet Protocol Version 4, Src: 192.168.10.21, Dst: 192.168.10.25
+Transmission Control Protocol, Src Port: 60573, Dst Port: 21, Seq: 1, Ack: 32, Len: 10
+File Transfer Protocol (FTP)
+    USER lfz\r\n
+[Current working directory: ]
+
+
+原始报文中有两个请求报文，docker0转发的也只有两个请求报文，一条是:
+Frame 5: 64 bytes on wire (512 bits), 64 bytes captured (512 bits)
+Ethernet II, Src: LCFCHeFe_ef:ad:ee (c8:5b:76:ef:ad:ee), Dst: 02:42:ac:11:00:02 (02:42:ac:11:00:02)
+Internet Protocol Version 4, Src: 192.168.10.21, Dst: 192.168.10.25
+Transmission Control Protocol, Src Port: 60573, Dst Port: 21, Seq: 1, Ack: 32, Len: 10
+File Transfer Protocol (FTP)
+    USER lfz\r\n
+[Current working directory: ]
+```
+
 
 ## 虚拟网卡搭建网桥触发规则  
 
@@ -553,7 +677,9 @@ COMMON_OBJS := $(COMMON_DIR)/common_params.o
 
 ```sh
 # 使用以下命令编译代码
-clang -O2 -target bpf -c xdp_prog_kern.c -o xdp_prog_kern.o
+rm -fr xdp_prog_kern.o 
+make # 做好使用makefile编译，不然warn也会导致部署失败  
+# clang -O2 -target bpf -c xdp_prog_kern.c -o xdp_prog_kern.o
 
 # 将编译好的xdp_prog_kern.o文件加载到内核中
 sudo ip link set dev enp0s6 xdp object xdp_prog_kern.o sec xdp  
@@ -563,6 +689,31 @@ ip link show enp0s6  // prog/xdp id 13 tag 649153f4d32aeb29 jited
 
 # 卸载
 ip link set dev enp0s6 xdp off
+```
+
+```sh
+#!/usr/bin/env bash
+arg=$1
+interface=enp0s6
+
+if [[ "${arg}" == "load" ]]; then
+    echo "--load"
+    rm -fr xdp_prog_kern.o 
+    make
+    sudo ip link set dev $interface xdp object xdp_prog_kern.o sec xdp  
+    ip link show $interface
+fi
+
+if [[ "${arg}" == "unload" ]]; then
+    echo "--unload"
+    ip link set dev $interface xdp off
+    ip link show $interface
+fi
+
+if [[ "${arg}" == "log" ]]; then
+    echo "--log"
+    tail /sys/kernel/debug/tracing/trace
+fi
 ```
 
 加载到内核报错:  
@@ -919,3 +1070,5 @@ tap/tun/veth
     <img src="../../res/image/extra/br-4.png" width="100%"></img>  
 </div>
 <br>
+
+
