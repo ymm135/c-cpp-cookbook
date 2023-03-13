@@ -3,6 +3,13 @@
 [华为-二三层转发实例讲解](https://support.huawei.com/enterprise/zh/knowledge/EKB1001157897)  
 [60 天通过 CCNA 考试](https://ccna60d.xfoss.com/)  
 
+- [环境搭建](#环境搭建)
+- [ARP报文](#arp报文)
+- [网卡与协议栈](#网卡与协议栈)
+- [对于二层转发(PC2 Ping PC3)](#对于二层转发pc2-ping-pc3)
+- [对于三层转发(PC1 Ping PC3)](#对于三层转发pc1-ping-pc3)
+
+
 ## 环境搭建
 
 [GNS3环境搭建](https://github.com/ymm135/docs/blob/master/network/network-learn.md) 
@@ -351,6 +358,53 @@ Address Resolution Protocol (request)
     Target IP address: 10.25.16.170
 ```
 
+## 网卡与协议栈  
+
+<br>
+<div align=center>
+    <img src="../../res/image/extra/nic-1.png" width="85%"></img>  
+</div>
+<br>
+
+上层会向下层逐层委派工作。图中最上面的部分是网络应用程序，也就是浏览器、电子邮件客户端、Web服务器、电子邮件服务器等程序，它们会将收发数据等工作委派给下层的部分来完成。应用程序的下面是Socket库，其中包括解析器，解析器用来向DNS服务器发出查询。再下面就是操作系统内部了，其中包括协议栈。协议栈的上半部分有两块，分别是负责用TCP协议收发数据的部分和负责用UDP协议收发数据的部分，它们会接受应用程序的委托执行收发数据的操作。像浏览器、邮件等一般的应用程序都是使用TCP收发数据的，而像DNS查询等收发较短的控制数据的时候则使用UDP。  
+
+下面一半是用IP协议控制网络包收发操作的部分。在互联网上传送数据时，数据会被切分成一个一个的网络包，而将网络包发送给通信对象的操作就是由IP协议来负责的。IP下面的网卡驱动程序负责控制网卡硬件，而最下面的网卡则负责完成实际的收发操作，也就是对网线中的信号执行发送和接收的操作。  
+
+<br>
+<div align=center>
+    <img src="../../res/image/extra/nic-2.png" width="70%"></img>  
+</div>
+<br>
+
+IP模块在生成IP头部之后，会在它前面再加上MAC头部。MAC头部是以太网使用的头部，它包含了接收方和发送方的MAC地址等信息。  
+
+<br>
+<div align=center>
+    <img src="../../res/image/extra/nic-3.png" width="70%"></img>  
+</div>
+<br>
+
+在生成MAC头部时，只要设置上图中的3个字段就可以了。首先是“以太类型”，这里填写表示IP协议的值0800。接下来是发送方MAC地址，这里填写网卡本身的MAC地址。MAC地址是在网卡生产时写入ROM里的，只要将这个值读取出来写入MAC头部就可以了。
+
+下面来看看以太网的包收发操作。IP生成的网络包只是存放在内存中的一串数字信息，我们需要将数字信息转换为电或光信号，才能在网线上传输。负责执行这一操作的是网卡，要控制网卡还需要网卡驱动程序。下面是一张网卡主要构成要素的概念图。  
+
+<br>
+<div align=center>
+    <img src="../../res/image/extra/nic-4.png" width="70%"></img>  
+</div>
+<br>
+
+网卡并不是通上电之后就可以马上开始工作的，而是和其他硬件一样，都需要进行初始化。也就是说，打开计算机启动操作系统的时候，网卡驱动程序会对硬件进行初始化操作，然后硬件才进入可以使用的状态。其中包括在MAC模块中设置MAC地址。
+
+
+MAC模块会将包从缓冲区中取出，并在开头加上报头和起始帧分界符，在末尾加上用于检测错误的帧校验序列。
+
+<br>
+<div align=center>
+    <img src="../../res/image/extra/nic-5.png" width="70%"></img>  
+</div>
+<br>
+
 ## 对于二层转发(PC2 Ping PC3)
 
 1. PC2生成一个源IP地址为`192.168.200.2/24`，目的IP地址为`192.168.200.3/24`的ICMP请求报文。
@@ -390,7 +444,9 @@ Address Resolution Protocol (reply)
 
 2. PC2的IP地址为`192.168.200.2/24`，PC3的IP地址为`192.168.200.3/24`，通过IP地址与掩码相与可以知道两台PC的网段均为`192.168.1.0/24`。在同一个网段，那么进行二层转发。
 
-> A 直接广播`ARP request` 到广播域，B处于同一广播域，可以接收到 `ARP request`，B用单播方式直接告诉A自己的MAC B 地址。A收到B的ARP reply，将 MAC B ----10.1.1.3 缓存在`ARP Table`，既然知道B的二层、三层地址，可以完成 Ethernet Frame 的封装，从接口发送出去，可以长驱直入到达B，B也以同样的原理发回返程的Ethernet Frame。
+> A 直接广播`ARP request` 到广播域，B处于同一广播域，可以接收到 `ARP request`，B用单播方式直接告诉A自己的MAC B 地址。A收到B的ARP reply，将 MAC B ----192.168.200.3 缓存在`ARP Table`，既然知道B的二层、三层地址，可以完成 Ethernet Frame 的封装，从接口发送出去，可以长驱直入到达B，B也以同样的原理发回返程的Ethernet Frame。
+
+> 网卡负责二层处理，协议栈负责三层处理。  
 
 3. `PC2`在广播域中发出ARP请求报文，请求`PC3`的MAC地址。
 
@@ -439,7 +495,6 @@ PC2> arp
 
 17. `PC2`收到了来自`PC3`的`ICMP`回显报文，则`Ping`通。
 
- 
 ## 对于三层转发(PC1 Ping PC3)
 
 1. PC1生成一个源IP地址为 `192.168.1.2/24`，目的IP地址为 `192.168.200.3/24` 的ICMP请求报文。
