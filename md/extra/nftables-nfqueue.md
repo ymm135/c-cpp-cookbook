@@ -1011,6 +1011,18 @@ tcpdump -i enp0s6 port 9080
 
 
 ## 网桥原理  
+### 网桥的工作原理
+网桥处理包遵循以下几条规则：
+
+- 在一个接口上接收到的包不会再往那个接口上发送此包。  
+- 每个接收到的包都要学习其源MAC地址。  
+- 如果数据包是多播或者广播包（通过2层MAC地址确定）则要向接收端口以外的所有端口转发，如果上层协议感兴趣，则还会递交上层处理。  
+- 如果数据包的地址不能再CAM表中找到，则向接收端口以外的其他端口转发。  
+- 如果CAM表中能找到，则转发给相应端口，如果发送和接收都是统一端口，则不发送。  
+
+> 注意，网桥是以混杂模式工作的。关于网桥更多，请查阅相关资料。
+
+### 实例  
 [参考资料](https://www.cnblogs.com/still-smile/p/14932131.html)  
 
 <br>
@@ -1071,4 +1083,96 @@ tap/tun/veth
 </div>
 <br>
 
+
+## ovs 转发流量  
+Open vSwitch (OVS) 是一个高性能、多层、虚拟交换机，它提供了一种软件定义网络的解决方案。  
+
+
+<br>
+<div align=center>
+    <img src="../../res/image/extra/ovs-1.jpg" width="80%"></img>  
+</div>
+<br>
+
+整体结构:  
+<br>
+<div align=center>
+    <img src="../../res/image/extra/ovs-2.jpg" width="80%"></img>  
+</div>
+<br>
+
+### 环境搭建
+```sh
+apt install openvswitch-switch
+ovs-vsctl --version
+> ovs-vsctl (Open vSwitch) 2.13.8
+> DB Schema 8.2.0
+```
+
+
+```sh
+# 创建网桥
+ovs-vsctl add-br br0
+ip link set br0 up 
+
+# 查看网桥
+ovs-vsctl show
+923d5dbd-771f-4e32-9164-db00da3a4e41
+    Bridge br0
+        Port br0
+            Interface br0
+                type: internal
+    ovs_version: "2.13.8"
+
+# 把物理网卡和虚拟网卡加入网桥
+
+sudo ip link add eth0 type dummy
+sudo ip link set dev eth0 up
+
+ovs-vsctl add-port br0 enp0s6 
+ovs-vsctl add-port br0 eth0 
+
+# 查看网桥接入的接口
+ovs-vsctl list-ports br0 
+
+# 删除接口
+ovs-vsctl del-port br0 enp0s6
+
+# 增加镜像功能
+ovs-vsctl -- --id=@aaa get port enp0s6 \
+          -- --id=@bbb get port eth0 \
+          -- --id=@m create mirror name=m0 select_src_port=@aaa select-dst-port=@aaa \
+          output_port=@bbb \
+          -- set bridge br0 mirrors=@m
+
+# 查看镜像
+$ ovs-vsctl list Mirror 
+_uuid               : c866af50-cbca-473d-ae0f-97ade787ca50
+external_ids        : {}
+name                : m0
+output_port         : a2ca428e-35e6-441a-a496-6ec377e21620
+output_vlan         : []
+select_all          : false
+select_dst_port     : [855cdfc5-0da2-4b2f-810c-c791007faefb]
+select_src_port     : [855cdfc5-0da2-4b2f-810c-c791007faefb]
+select_vlan         : []
+snaplen             : []
+statistics          : {tx_bytes=1423714, tx_packets=12694}
+
+# 删除镜像
+$ ovs-vsctl remove Bridge br0 mirrors c866af50-cbca-473d-ae0f-97ade787ca50
+
+# 增加流表, 和镜像功能二选一即可
+ovs-ofctl add-flow br0 in_port="enp0s6",actions=output:"eth0"
+
+# 查看流流表
+ovs-ofctl dump-flows br0
+ cookie=0x0, duration=3.639s, table=0, n_packets=2, n_bytes=238, in_port=enp7s0 actions=output:eth0
+ cookie=0x0, duration=4437.322s, table=0, n_packets=3317, n_bytes=387810, priority=0 actions=NORMAL
+
+ # 删除流表
+ovs-ofctl del-flows br0 in_port=enp7s0
+```
+
+> tcpreplay 不行的，還是需要交换机的镜像口才行。  :cry:  
 
