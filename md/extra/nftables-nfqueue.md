@@ -14,7 +14,7 @@
   - [网桥的工作原理](#网桥的工作原理)
   - [实例](#实例)
 - [ovs 转发流量](#ovs-转发流量)
-  - [环境搭建](#环境搭建-1)
+  - [ovs环境搭建](#ovs环境搭建)
 
 ## 环境搭建
 
@@ -1106,7 +1106,19 @@ Open vSwitch (OVS) 是一个高性能、多层、虚拟交换机，它提供了�
 </div>
 <br>
 
-### 环境搭建
+镜像设置
+- 指定mirror名称，name={name}
+- 指定流量：
+  - select-all: true，表示此bridge上的所有流量;
+  - select-dst-port: 镜像从此port离开的流量;
+  - select-src-port: 镜像从此port进入的流量;
+  - select-vlan: 镜像此VLAN下的数据流量。
+- 指定镜像目的端口:
+  - output-port: 流量镜像至此端口;
+  - output-vlan: 流量镜像至指定vlan，镜像至指定VLAN时，原始tag会被剥离。
+
+
+### ovs环境搭建
 ```sh
 apt install openvswitch-switch
 ovs-vsctl --version
@@ -1180,4 +1192,154 @@ ovs-ofctl del-flows br0 in_port=enp7s0
 ```
 
 > tcpreplay 不行的，還是需要交换机的镜像口才行。  :cry:  
+
+
+### ovs通过network namesapce 环境验证  
+[参考文章](http://just4coding.com/2017/12/02/ovs-mirror/)  
+
+<br>
+<div align=center>
+    <img src="../../res/image/extra/network-ns-1.png" width="75%"></img>  
+</div>
+<br>
+
+首先构造环境
+```sh
+ovs-vsctl add-br br0
+ovs-vsctl add-port br0 tap1 -- set interface tap1 type=internal
+ovs-vsctl add-port br0 tap2 -- set interface tap2 type=internal
+ovs-vsctl add-port br0 tap3 -- set interface tap3 type=internal
+
+# 删除
+ovs-vsctl del-port br0 tap1
+ovs-vsctl del-port br0 tap2
+ovs-vsctl del-port br0 tap3
+
+ovs-vsctl list-ports br0
+
+ip netns add ns1
+ip netns add ns2
+ip netns add ns3
+
+ip link set dev tap1 netns ns1
+ip link set dev tap2 netns ns2
+ip link set dev tap3 netns ns3
+
+ip netns exec ns1 ip addr add 10.10.10.11/24 dev tap1
+ip netns exec ns1 ip link set up tap1
+ip netns exec ns2 ip addr add 10.10.10.12/24 dev tap2
+ip netns exec ns2 ip link set up tap2
+ip netns exec ns3 ip link set up tap3
+```
+
+创建了三个网络空间，然后把三个网络空间的网卡加入一个网桥中，这时网桥充当交换机的功能，由于`ns1`与`ns2`处于同一网段，应该能够通信。`ns3`没有ip地址，所有不能和其他空间进行通信。但是可以设置为镜像口，接收其他空间的数据。  
+
+我们从ns1中PING ns2的IP:
+```sh
+ip netns exec ns1 ping 10.10.10.12 -c 2
+PING 10.10.10.12 (10.10.10.12) 56(84) bytes of data.
+64 bytes from 10.10.10.12: icmp_seq=1 ttl=64 time=0.060 ms
+64 bytes from 10.10.10.12: icmp_seq=2 ttl=64 time=0.106 ms
+```
+
+创建一个镜像口`tap3`
+```sh
+ovs-vsctl -- --id=@tap1 get port tap1  \
+          -- --id=@tap3 get port tap3  \
+          -- --id=@m create mirror name=m0 select_src_port=@tap1 select_dst_port=@tap1 output_port=@tap3 \
+          -- set bridge br0 mirrors=@m
+```
+
+在`ns3`上抓包可以看到成功获得`tap2`回应`tap1`的`ICMP`响应数据包:  
+```sh
+ip netns exec ns3 tcpdump -i tap3 -e -nn icmp or arp
+tcpdump: WARNING: tap3: no IPv4 address assigned
+tcpdump: verbose output suppressed, use -v or -vv for full protocol decode
+listening on tap3, link-type EN10MB (Ethernet), capture size 65535 bytes
+23:22:11.919448 26:1e:74:67:6c:cc > 16:fe:12:ad:f0:4f, ethertype IPv4 (0x0800), length 98: 10.10.10.12 > 10.10.10.11: ICMP echo reply, id 4411, seq 1, length 64
+23:22:12.919823 26:1e:74:67:6c:cc > 16:fe:12:ad:f0:4f, ethertype IPv4 (0x0800), length 98: 10.10.10.12 > 10.10.10.11: ICMP echo reply, id 4411, seq 2, length 64
+23:22:16.929503 26:1e:74:67:6c:cc > 16:fe:12:ad:f0:4f, ethertype ARP (0x0806), length 42: Request who-has 10.10.10.11 tell 10.10.10.12, length 28
+^C
+3 packets captured
+3 packets received by filter
+0 packets dropped by kernel
+```
+
+### kvm搭建虚拟环境，验证ovs 镜像功能 
+
+#### 简介  
+- KVM 是`kernel-based Virtual Machine` 
+- QEMU `Quick Emulator`，是一个纯软件实现的虚拟化系统  
+
+
+<br>
+<div align=center>
+    <img src="../../res/image/extra/kvm-qemu-1.png" width="90%"></img>  
+</div>
+<br>
+
+QEMU/KVM 是目前最流行的虚拟化技术，它基于 Linux 内核提供的 kvm 模块，结构精简，性能损失小，而且开源免费（对比收费的 vmware），因此成了大部分企业的首选虚拟化方案。
+
+目前各大云厂商的虚拟化方案，新的服务器实例基本都是用的 KVM 技术。即使是起步最早，一直重度使用 Xen 的 AWS，从 EC2 C5 开始就改用了基于 KVM 定制的 Nitro 虚拟化技术。。
+
+但是 KVM 作为一个企业级的底层虚拟化技术，却没有对桌面使用做深入的优化，因此如果想把它当成桌面虚拟化软件来使用，替代掉 VirtualBox/VMware，有一定难度。
+
+<br>
+<div align=center>
+    <img src="../../res/image/extra/kvm-qemu-2.png" width="80%"></img>  
+</div>
+<br>
+
+### 环境搭建
+
+```sh
+# 查看是否支持虚拟化
+$ grep vmx /proc/cpuinfo
+flags		: fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge
+
+# 创建虚拟硬盘
+qemu-img create -f qcow2 vm/ubuntu.img 10G
+
+# 创建虚拟机
+# –virt-type：虚拟机类型（kvm，xen，exsi）
+# 执行完该命令后，qemu会开启一个5991端口，使用VNC软件连接，便可正常安装虚拟机
+virt-install --name kvmtest01 \
+--boot network,cdrom,menu=on \
+--ram 1024 \
+--vcpus=1 \
+--os-type=linux \
+--accelerate \
+-c iso/CentOS-6.4-x86_64-bin-DVD1.iso \
+--disk path=vm/ubuntu.img,size=10,format=qcow2,bus=virtio \
+--bridge=br0,model=virtio \
+--vnc \
+--vncport=5991 \
+--vnclisten=0.0.0.0
+```
+
+
+### docker 搭建虚拟环境验证ovs功能  
+
+| 网络模式| 	简介 | 
+| ------ | ------- |
+| Host	| --net=host, --net=bridge, 容器将不会虚拟出自己的网卡，配置自己的IP等，**而是使用宿主机的IP和端口。** | 
+| Bridge	| --net=bridge, 此模式会为每一个容器分配、设置IP等，并将容器连接到一个docker0虚拟网桥，通过docker0网桥以及Iptables nat表配置与宿主机通信。 | 
+| None	| --net=none, 该模式关闭了容器的网络功能。 | 
+| Container	| --net=container:NAME_or_ID, 创建的容器不会创建自己的网卡，配置自己的IP，而是和一个指定的容器共享IP、端口范围。 | 
+| 自定义网络	| 略 | 
+
+```sh
+docker network ls
+NETWORK ID     NAME      DRIVER    SCOPE
+611e35839147   bridge    bridge    local
+6019583ed676   host      host      local
+4c6b0ea28cfb   none      null      local
+
+brctl show 
+bridge name	bridge id		STP enabled	interfaces
+docker0		8000.024200a1fa63	no
+```
+
+
+
 
