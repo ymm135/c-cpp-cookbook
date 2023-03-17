@@ -15,6 +15,12 @@
   - [实例](#实例)
 - [ovs 转发流量](#ovs-转发流量)
   - [ovs环境搭建](#ovs环境搭建)
+  - [ovs通过network namesapce 环境验证](#ovs通过network-namesapce-环境验证)
+  - [kvm搭建虚拟环境，验证ovs 镜像功能](#kvm搭建虚拟环境验证ovs-镜像功能)
+    - [简介](#简介)
+  - [环境搭建](#环境搭建-1)
+  - [docker 搭建虚拟环境验证ovs功能](#docker-搭建虚拟环境验证ovs功能)
+
 
 ## 环境搭建
 
@@ -288,7 +294,7 @@ sudo systemctl start docker
 ```sh
 docker pull ubuntu:20.04
 
-docker run --privileged -itd -v data:/data -p 8080:8080 --name ub ubuntu:20.04 /usr/sbin/init
+docker run --privileged -itd -v /data:/data -p 8080:8080 --name ub ubuntu:20.04 /usr/sbin/init
 
 # 进入容器
 docker exec -it ub bash
@@ -302,6 +308,8 @@ docker exec -it ub bash
 # apt install net-tools
 # apt install tcpdump 
 ```
+
+> `docker image inspect ubuntu:20.04` 查看镜像内容，查看镜像内容.
 
 网卡信息
 ```sh

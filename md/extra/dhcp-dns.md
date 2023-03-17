@@ -1,5 +1,13 @@
 - # DHCP-DNS  
 
+- [DHCP](#dhcp)
+  - [DHCP功能](#dhcp功能)
+  - [搭建环境验证](#搭建环境验证)
+  - [DHCP报文](#dhcp报文)
+- [DNS](#dns)
+  - [DNS 功能](#dns-功能)
+
+
 主机使用动态主机配置协议（`Dynamic Host Configuration Protocol, DHCP`），紧接着加电启动后，收集到包括了 IP 地址、子网掩码及默认网关等初始配置信息。因为所有主机都需要一个 IP 地址，以在 IP 网络中进行通信，而 DHCP 就减轻了手动为每台主机配置一个 IP 地址的管理性负担。
 
 域名系统（`Domain Name System, DNS`）将主机名称映射到 IP 地址，使得你可`www.in60days.com`输入到 `web` 浏览器中，而无需输入寄存该站点的服务器 IP 地址。
@@ -54,8 +62,173 @@ DHCP服务器可被配置为在一个名为`租期`的特定时期，赋予某�
 3. DHCP确认数据包（DHCP ACK packet）, 选中的那台 DHCP 服务器发出另一个广播报文，来确认给那台特定客户端的地址分配，再度用到 UDP 源端口bootps 67及目的端口bootpc 68。  
 
 
-
 ### 搭建环境验证
+
+R1配置
+```sh
+R1#show int description
+Interface                      Status         Protocol Description
+Fa0/0                          admin down     down     
+Fa0/1                          admin down     down     
+R1#config t
+Enter configuration commands, one per line.  End with CNTL/Z.
+R1(config)#interface fastEthernet 0/0
+R1(config-if)#ip address 10.10.1.254 255.255.255.0   # 配置ip
+R1(config-if)#no shutdown
+R1(config-if)#exit
+R1(config)#ip dhcp pool DHCPServer
+R1(dhcp-config)#network 10.10.1.0 255.255.255.0
+R1(dhcp-config)#default-router 10.10.1.254
+R1(dhcp-config)#dns-server 114.114.114.114
+R1(dhcp-config)#exit
+R1(config)#ip dhcp excluded-address 10.10.1.254
+R1(config)#end
+Interface                  IP-Address      OK? Method Status                Protocol
+FastEthernet0/0            10.10.1.254     YES manual up                    up      
+FastEthernet0/1            unassigned      YES unset  administratively down down    
+```
+
+PC1配置
+```sh
+PC1> dhcp -r
+DDORA IP 10.10.1.2/24 GW 10.10.1.254
+```
+
+### DHCP报文
+`Discover`  
+```sh
+Frame 6: 406 bytes on wire (3248 bits), 406 bytes captured (3248 bits) on interface -, id 0
+Ethernet II, Src: Private_66:68:02 (00:50:79:66:68:02), Dst: Broadcast (ff:ff:ff:ff:ff:ff)
+Internet Protocol Version 4, Src: 0.0.0.0, Dst: 255.255.255.255
+User Datagram Protocol, Src Port: 68, Dst Port: 67
+Dynamic Host Configuration Protocol (Discover)
+    Message type: Boot Request (1)
+    Hardware type: Ethernet (0x01)
+    Hardware address length: 6
+    Hops: 0
+    Transaction ID: 0xcc50ef12
+    Seconds elapsed: 0
+    Bootp flags: 0x0000 (Unicast)
+    Client IP address: 0.0.0.0
+    Your (client) IP address: 0.0.0.0
+    Next server IP address: 0.0.0.0
+    Relay agent IP address: 0.0.0.0
+    Client MAC address: Private_66:68:02 (00:50:79:66:68:02)
+    Client hardware address padding: 00000000000000000000
+    Server host name not given
+    Boot file name not given
+    Magic cookie: DHCP
+    Option: (53) DHCP Message Type (Discover)
+    Option: (12) Host Name
+    Option: (61) Client identifier
+    Option: (255) End
+    Padding: 000000000000000000000000000000000000000000000000000000000000000000000000…
+```
+
+`Offer`
+```sh
+Frame 16: 342 bytes on wire (2736 bits), 342 bytes captured (2736 bits) on interface -, id 0
+Ethernet II, Src: c0:01:06:0a:00:00 (c0:01:06:0a:00:00), Dst: Private_66:68:02 (00:50:79:66:68:02)
+Internet Protocol Version 4, Src: 10.10.1.254, Dst: 10.10.1.2
+User Datagram Protocol, Src Port: 67, Dst Port: 68
+Dynamic Host Configuration Protocol (Offer)
+    Message type: Boot Reply (2)
+    Hardware type: Ethernet (0x01)
+    Hardware address length: 6
+    Hops: 0
+    Transaction ID: 0x4a70c259
+    Seconds elapsed: 0
+    Bootp flags: 0x0000 (Unicast)
+    Client IP address: 0.0.0.0
+    Your (client) IP address: 10.10.1.2
+    Next server IP address: 0.0.0.0
+    Relay agent IP address: 0.0.0.0
+    Client MAC address: Private_66:68:02 (00:50:79:66:68:02)
+    Client hardware address padding: 00000000000000000000
+    Server host name not given
+    Boot file name not given
+    Magic cookie: DHCP
+    Option: (53) DHCP Message Type (Offer)
+    Option: (54) DHCP Server Identifier (10.10.1.254)
+    Option: (51) IP Address Lease Time
+    Option: (58) Renewal Time Value
+    Option: (59) Rebinding Time Value
+    Option: (1) Subnet Mask (255.255.255.0)
+    Option: (3) Router
+    Option: (6) Domain Name Server
+    Option: (255) End
+    Padding: 0000000000000000000000000000
+```
+
+`Request`
+```sh
+Frame 18: 406 bytes on wire (3248 bits), 406 bytes captured (3248 bits) on interface -, id 0
+Ethernet II, Src: Private_66:68:02 (00:50:79:66:68:02), Dst: c0:01:06:0a:00:00 (c0:01:06:0a:00:00)
+Internet Protocol Version 4, Src: 0.0.0.0, Dst: 255.255.255.255
+User Datagram Protocol, Src Port: 68, Dst Port: 67
+Dynamic Host Configuration Protocol (Request)
+    Message type: Boot Request (1)
+    Hardware type: Ethernet (0x01)
+    Hardware address length: 6
+    Hops: 0
+    Transaction ID: 0x4a70c259
+    Seconds elapsed: 0
+    Bootp flags: 0x0000 (Unicast)
+    Client IP address: 10.10.1.2
+    Your (client) IP address: 0.0.0.0
+    Next server IP address: 0.0.0.0
+    Relay agent IP address: 0.0.0.0
+    Client MAC address: Private_66:68:02 (00:50:79:66:68:02)
+    Client hardware address padding: 00000000000000000000
+    Server host name not given
+    Boot file name not given
+    Magic cookie: DHCP
+    Option: (53) DHCP Message Type (Request)
+    Option: (54) DHCP Server Identifier (10.10.1.254)
+    Option: (50) Requested IP Address (10.10.1.2)
+    Option: (61) Client identifier
+    Option: (12) Host Name
+    Option: (55) Parameter Request List
+    Option: (255) End
+    Padding: 000000000000000000000000000000000000000000000000000000000000000000000000…
+```
+
+`ACK`
+```sh
+Frame 19: 342 bytes on wire (2736 bits), 342 bytes captured (2736 bits) on interface -, id 0
+Ethernet II, Src: c0:01:06:0a:00:00 (c0:01:06:0a:00:00), Dst: Private_66:68:02 (00:50:79:66:68:02)
+Internet Protocol Version 4, Src: 10.10.1.254, Dst: 10.10.1.2
+User Datagram Protocol, Src Port: 67, Dst Port: 68
+Dynamic Host Configuration Protocol (ACK)
+    Message type: Boot Reply (2)
+    Hardware type: Ethernet (0x01)
+    Hardware address length: 6
+    Hops: 0
+    Transaction ID: 0x4a70c259
+    Seconds elapsed: 0
+    Bootp flags: 0x0000 (Unicast)
+    Client IP address: 10.10.1.2
+    Your (client) IP address: 10.10.1.2
+    Next server IP address: 0.0.0.0
+    Relay agent IP address: 0.0.0.0
+    Client MAC address: Private_66:68:02 (00:50:79:66:68:02)
+    Client hardware address padding: 00000000000000000000
+    Server host name not given
+    Boot file name not given
+    Magic cookie: DHCP
+    Option: (53) DHCP Message Type (ACK)
+    Option: (54) DHCP Server Identifier (10.10.1.254)
+    Option: (51) IP Address Lease Time
+    Option: (58) Renewal Time Value
+    Option: (59) Rebinding Time Value
+    Option: (1) Subnet Mask (255.255.255.0)
+    Option: (3) Router
+    Option: (6) Domain Name Server
+    Option: (255) End
+    Padding: 0000000000000000000000000000
+
+```
+
 
 ## DNS
 ### DNS 功能
@@ -72,9 +245,11 @@ Router(config)#ip host R2 192.168.1.2
 Router(config)#ip host R3 192.168.1.3
 Router(config)#exit
 Router#ping R2
-Router#pinging 192.168.1.2
+Router#ping 192.168.1.2
 !!!!!
 ```
+
+
 
 
 
