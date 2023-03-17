@@ -19,6 +19,7 @@
     - #### [自制4bit cpu](https://github.com/ymm135/TD4-4BIT-CPU) 
   - ### **网络** 
     - #### [二三层转发实例讲解](md/extra/2-3-tran.md)  
+    - #### [DHCP/DNS](md/extra/md/extra/dhcp-dns.md)  
     - #### [nftables的nfqueue数据包读取](md/extra/nftables-nfqueue.md)  
   - ### **逆向** 
     - #### [逆向工程原理](md/extra/reverse.md)  
