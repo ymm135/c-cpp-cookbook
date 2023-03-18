@@ -249,7 +249,404 @@ Router#ping 192.168.1.2
 !!!!!
 ```
 
+## DHCP/DNS/VM 综合练习
+
+[参考链接](https://blog.51cto.com/u_14449541/2436762)  
+
+这次在gns3中加入vm-ubuntu的虚拟机，作为服务器。首先需要再配置中增加vm虚拟机，另外要配置虚拟机的网卡模式:  
+
+<br>
+<div align=center>
+    <img src="../../res/image/extra/dhcp-dns-4.png" width="90%"></img>  
+</div>
+<br>
+
+> 还是要勾选nat功能的，需要连接外网  
+
+> Error while creating link: Attachment 'hostonly' is already configured on network adapter 0. Please remove it or allow VMwareVM 'VM-Ubuntu-1' to use any adapter.  
+> error while starting VM-Ubuntu-1: No VMnet interface available between vmnet2 and vmnet255. Go to preferences VMware / Network / Configure to add more interfaces.
+No VMnet interface available between vmnet2 and vmnet255. Go to preferences VMware / Network / Configure to add more interfaces.
+
+拓扑图:
+
+<br>
+<div align=center>
+    <img src="../../res/image/extra/dhcp-dns-7.png" width="100%"></img>  
+</div>
+<br>
+
+-----
+IOU1配置
+```sh
+IOU1#configure t
+Enter configuration commands, one per line.  End with CNTL/Z.
+IOU1(config)#no ip routing      # 关闭路由功能
+IOU1(config)#vlan 10,20,136     # 建立vlan
+IOU1(config-vlan)#int e0/1
+% Applying VLAN changes may take few minutes.  Please wait...
+
+IOU1(config-if)#sw mode acc
+IOU1(config-if)#sw acc vlan 10
+IOU1(config-if)#int e0/0
+IOU1(config-if)#sw mode acc
+IOU1(config-if)#sw acc vlan 20
+IOU1(config-if)#int e0/2      
+IOU1(config-if)#sw mode acc   
+IOU1(config-if)#sw acc vlan 136
+IOU1(config-if)#exit
+IOU1(config)#int e0/3
+IOU1(config-if)#sw mode trunk     # 设置为trunk模式  
+Command rejected: An interface whose trunk encapsulation is "Auto" can not be configured to "trunk" mode.
+IOU1(config-if)#sw t en dot
+IOU1(config-if)#ex
+
+IOU1(config)#do show vlan bri
+
+VLAN Name                             Status    Ports
+---- -------------------------------- --------- -------------------------------
+1    default                          active    Et0/3, Et1/0, Et1/1, Et1/2
+                                                Et1/3, Et2/0, Et2/1, Et2/2
+                                                Et2/3, Et3/0, Et3/1, Et3/2
+                                                Et3/3
+10   VLAN0010                         active    Et0/1
+20   VLAN0020                         active    Et0/0
+136  VLAN0136                         active    Et0/2
+1002 fddi-default                     act/unsup 
+1003 token-ring-default               act/unsup 
+1004 fddinet-default                  act/unsup 
+1005 trnet-default                    act/unsup 
+```
+
+> trunk 与 access 模式区别  
+> 
+<br>
+<div align=center>
+    <img src="../../res/image/extra/dhcp-dns-6.png" width="80%"></img>  
+</div>
+<br>
+
+-----
+
+IOU2进行配置
+```sh
+IOU2#configure t
+Enter configuration commands, one per line.  End with CNTL/Z.
+IOU2(config)#vlan 10,20,136
+IOU2(config-vlan)#exit
+% Applying VLAN changes may take few minutes.  Please wait...
+IOU2(config)#int vlan 10
+*Mar 18 10:50:00.547: %LINEPROTO-5-UPDOWN: Line protocol on Interface Vlan10, changed state to down
+IOU2(config-if)#ip add 192.168.10.1 255.255.255.0
+IOU2(config-if)#ip helper-address 192.168.136.5   
+IOU2(config-if)#no shut 
+*Mar 18 10:51:06.699: %LINK-3-UPDOWN: Interface Vlan10, changed state to up
+*Mar 18 10:51:06.703: %LINEPROTO-5-UPDOWN: Line protocol on Interface Vlan10, changed state to up
+
+IOU2(config-if)#int vlan 20 
+IOU2(config-if)#ip add 192.168.20.1 255.255.255.0  
+IOU2(config-if)#ip helper-address 192.168.136.5
+IOU2(config-if)#no shut                            
+IOU2(config-if)#
+*Mar 18 10:51:31.687: %LINK-3-UPDOWN: Interface Vlan20, changed state to up
+*Mar 18 10:51:31.691: %LINEPROTO-5-UPDOWN: Line protocol on Interface Vlan20, changed state to up
+
+IOU2(config-if)#int vlan 136
+IOU2(config-if)#ip add 192.168.136.1 255.255.255.0
+IOU2(config-if)#ip helper-address 192.168.136.5
+IOU2(config-if)#no shut
+IOU2(config-if)#exit
+IOU2#show ip inter b
+Interface              IP-Address      OK? Method Status                Protocol
+Ethernet0/0            unassigned      YES unset  up                    up      
+Ethernet0/1            unassigned      YES unset  up                    up      
+Ethernet0/2            unassigned      YES unset  up                    up      
+Ethernet0/3            unassigned      YES unset  up                    up      
+Ethernet1/0            unassigned      YES unset  up                    up      
+Ethernet1/1            unassigned      YES unset  up                    up      
+Ethernet1/2            unassigned      YES unset  up                    up      
+Ethernet1/3            unassigned      YES unset  up                    up      
+Ethernet2/0            unassigned      YES unset  up                    up      
+Ethernet2/1            unassigned      YES unset  up                    up      
+Ethernet2/2            unassigned      YES unset  up                    up      
+Ethernet2/3            unassigned      YES unset  up                    up      
+Ethernet3/0            unassigned      YES unset  up                    up      
+Ethernet3/1            unassigned      YES unset  up                    up      
+Ethernet3/2            unassigned      YES unset  up                    up      
+Ethernet3/3            unassigned      YES unset  up                    up      
+Vlan1                  unassigned      YES NVRAM  administratively down down    
+Vlan10                 192.168.10.1    YES manual up                    up      
+Vlan20                 192.168.20.1    YES manual up                    up      
+Vlan136                192.168.136.1   YES manual up                    up   
+IOU2(config)#int e0/0
+IOU2(config-if)#sw mode t
+Command rejected: An interface whose trunk encapsulation is "Auto" can not be configured to "trunk" mode.
+IOU2(config-if)#sw t en dot
+IOU2(config-if)#exit
+IOU2(config)#ip route 0.0.0.0 0.0.0.0 12.0.0.2         # 默认路由
+IOU2(config)#
+```
+
+IOU2接收的数据都是有VLAN标识的,比如来自PC1-`VLAN10`的数据包:  
+```sh
+Frame 27: 102 bytes on wire (816 bits), 102 bytes captured (816 bits) on interface -, id 0
+Ethernet II, Src: Private_66:68:00 (00:50:79:66:68:00), Dst: aa:bb:cc:80:02:00 (aa:bb:cc:80:02:00)
+802.1Q Virtual LAN, PRI: 0, DEI: 0, ID: 10
+    000. .... .... .... = Priority: Best Effort (default) (0)
+    ...0 .... .... .... = DEI: Ineligible
+    .... 0000 0000 1010 = ID: 10
+    Type: IPv4 (0x0800)
+Internet Protocol Version 4, Src: 192.168.10.110, Dst: 192.168.10.1
+Internet Control Message Protocol
+
+```
+
+-----
+
+R1配置
+```sh
+R1(config)#inter f0/0
+R1(config-if)#ip add 12.0.0.2 255.255.255.0  
+R1(config-if)#no shut
+*Mar  1 01:36:11.291: %LINK-3-UPDOWN: Interface FastEthernet0/0, changed state to up
+*Mar  1 01:36:12.291: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/0, changed state to up
+
+R1(config-if)#inter f0/1                     
+R1(config-if)#ip add 14.0.0.1 255.255.255.0 
+R1(config-if)#no shut                       
+R1(config-if)#exit
+*Mar  1 01:36:34.551: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
+*Mar  1 01:36:35.551: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
+
+R1(config)#ip route 192.168.0.0 255.255.0.0 12.0.0.1
+R1(config)#do show ip route 
+Codes: C - connected, S - static, R - RIP, M - mobile, B - BGP
+       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area 
+       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+       E1 - OSPF external type 1, E2 - OSPF external type 2
+       i - IS-IS, su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2
+       ia - IS-IS inter area, * - candidate default, U - per-user static route
+       o - ODR, P - periodic downloaded static route
+
+Gateway of last resort is not set
+
+     12.0.0.0/24 is subnetted, 1 subnets
+C       12.0.0.0 is directly connected, FastEthernet0/0
+     14.0.0.0/24 is subnetted, 1 subnets
+C       14.0.0.0 is directly connected, FastEthernet0/1
+S    192.168.0.0/16 [1/0] via 12.0.0.1
+```
+
+VM-Ubuntu-One-1配置
+```sh
+sudo apt install isc-dhcp-server -y  # DHCP
+sudo apt-get install bind9  # DNS
+```
+
+`/etc/dhcp/dhcpd.conf`配置dhcp服务器  
+```sh
+subnet 192.168.10.0 netmask 255.255.255.0 {
+        range 192.168.10.100 192.168.10.200;
+        option routers 192.168.10.1;
+}
+
+subnet 192.168.20.0 netmask 255.255.255.0 {
+        range 192.168.20.100 192.168.20.200;
+        option routers 192.168.20.1;
+}
+
+subnet 192.168.136.0 netmask 255.255.255.0 {
+        range 192.168.136.100 192.168.136.200;
+        option routers 192.168.136.1;
+}
+```
+也可以给某台客户机分配固定的ip地址
+
+```sh
+PC1> show ip
+
+NAME        : PC1[1]
+IP/MASK     : 0.0.0.0/0
+GATEWAY     : 0.0.0.0
+DNS         : 
+MAC         : 00:50:79:66:68:00
+LPORT       : 20014
+RHOST:PORT  : 127.0.0.1:20015
+MTU         : 1500
+```
+
+增加固定ip
+```sh
+host pc1-node {  
+    hardware ethernet 00:50:79:66:68:00;  fixed-address 192.168.10.110;
+}
+```
+
+重启服务:`systemctl restart isc-dhcp-server`
+
+另外配置服务器的ip地址为`192.168.136.5`  
+
+` vim /etc/netplan/00-installer-config.yaml`  
+```yaml
+# This is the network config written by 'subiquity'
+network:
+  ethernets:
+    ens33:
+      dhcp4: no
+      addresses:
+        - 192.168.136.5/24
+      gateway4: 192.168.136.1
+  version: 2
+```
+
+应用`netplan apply`
 
 
+DNS服务器设置
+```sh
+# 修改 /etc/bind/named.conf.options
+forwarders { 
+       8.8.8.8; 
+       8.8.4.4; 
+}; 
+
+# /etc/bind/named.conf.local
+zone "mycloud.cox" { 
+     type master; 
+     file "/etc/bind/db.mycloud.cox"; 
+}; 
+
+# /etc/bind/db.mycloud.cox
+; 
+; BIND data file for dev sites 
+; 
+$TTL    604800 
+@       IN      SOA     mycloud.cox. root.mycloud.cox. ( 
+                              1         ; Serial 
+                         604800         ; Refresh 
+                          86400         ; Retry 
+                        2419200         ; Expire 
+                         604800 )       ; Negative Cache TTL 
+; 
+@       IN      NS      mycloud.cox. 
+@       IN      A       192.168.120.1 
+*.mycloud.cox.  14400   IN      A       192.168.120.1 
+
+
+# 重启服务
+service bind9 restart
+
+```
+
+
+-----
+PC1配置
+```sh
+PC1> dhcp
+DORA IP 192.168.10.110/24 GW 192.168.10.1
+
+PC1> show ip
+
+NAME        : PC1[1]
+IP/MASK     : 192.168.10.110/24
+GATEWAY     : 192.168.10.1
+DNS         : 
+DHCP SERVER : 192.168.136.5
+DHCP LEASE  : 569, 600/300/525
+DOMAIN NAME : example.org
+MAC         : 00:50:79:66:68:00
+LPORT       : 20014
+RHOST:PORT  : 127.0.0.1:20015
+MTU         : 1500
+
+ip dns 192.168.136.5
+ping mycloud.com
+```
+
+-------
+
+PC2配置
+```sh
+PC2> dhcp
+DDORA IP 192.168.20.100/24 GW 192.168.20.1
+
+PC2> show ip
+
+NAME        : PC2[1]
+IP/MASK     : 192.168.20.100/24
+GATEWAY     : 192.168.20.1
+DNS         : 
+DHCP SERVER : 192.168.136.5
+DHCP LEASE  : 586, 600/300/525
+DOMAIN NAME : example.org
+MAC         : 00:50:79:66:68:01
+LPORT       : 20016
+RHOST:PORT  : 127.0.0.1:20017
+MTU         : 1500
+```
+
+## GNS3 IOU镜像
+生成密钥:`wget http://www.ipvanquish.com/download/CiscoIOUKeygen3f.py`  
+
+`CiscoIOUKeygen3f.py`文件内容:  
+```python
+#! /usr/bin/python3
+print("*********************************************************************")
+print("Cisco IOU License Generator - Kal 2011, python port of 2006 C version")
+import os
+import socket
+import hashlib
+import struct
+# get the host id and host name to calculate the hostkey
+hostid=os.popen("hostid").read().strip()
+hostname = socket.gethostname()
+ioukey=int(hostid,16)
+for x in hostname:
+ ioukey = ioukey + ord(x)
+print("hostid=" + hostid +", hostname="+ hostname + ", ioukey=" + hex(ioukey)[2:])
+# create the license using md5sum
+iouPad1 = b'\x4B\x58\x21\x81\x56\x7B\x0D\xF3\x21\x43\x9B\x7E\xAC\x1D\xE6\x8A'
+iouPad2 = b'\x80' + 39*b'\0'
+md5input=iouPad1 + iouPad2 + struct.pack('!i', ioukey) + iouPad1
+iouLicense=hashlib.md5(md5input).hexdigest()[:16]
+
+print("\nAdd the following text to ~/.iourc:")
+print("[license]\n" + hostname + " = " + iouLicense + ";\n")
+with open("iourc.txt", "wt") as out_file:
+   out_file.write("[license]\n" + hostname + " = " + iouLicense + ";\n")
+print("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAlready copy to the file iourc.txt\n ")
+
+print("You can disable the phone home feature with something like:")
+print(" echo '127.0.0.127 xml.cisco.com' >> /etc/hosts\n")
+```
+
+日志:
+```sh
+Add the following text to ~/.iourc:
+[license]
+gns3vm = 73635fd3b0a13ad0;
+
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Already copy to the file iourc.txt
+ 
+You can disable the phone home feature with something like:
+echo '127.0.0.127 xml.cisco.com' >> /etc/hosts
+```
+
+<br>
+<div align=center>
+    <img src="../../res/image/extra/dhcp-dns-5.png" width="60%"></img>  
+</div>
+<br>
+
+## GNS3与docker的关联
+
+[Create a docker container for GNS3](https://docs.gns3.com/docs/emulators/create-a-docker-container-for-gns3/)  
+
+
+需要再GNS3中创建docker镜像，然后才能在列表中展示  
+`ssh gns3@192.168.122.2`, 密码:gns3
+```sh
+docker pull atxiaoming/ssh-ubuntu:20.04
+```
 
 
