@@ -19,10 +19,11 @@
     - #### [自制4bit cpu](https://github.com/ymm135/TD4-4BIT-CPU) 
   - ### **网络** 
     - #### [二三层转发实例讲解](md/extra/2-3-tran.md)  
-    - #### [DHCP/DNS](md/extra/md/extra/dhcp-dns.md)  
+    - #### [DHCP/DNS](md/extra/dhcp-dns.md)  
     - #### [nftables的nfqueue数据包读取](md/extra/nftables-nfqueue.md)  
   - ### **逆向** 
     - #### [逆向工程原理](md/extra/reverse.md)  
     - #### [Hook原理及示例](md/extra/hook-app.md)  
+    - #### [漏洞挖掘与利用](md/extra/hole.md)  
   - ### **工具**  
     - #### [机器码转汇编/C](md/extra/transition.md)  
