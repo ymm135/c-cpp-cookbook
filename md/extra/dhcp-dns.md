@@ -6,6 +6,9 @@
   - [DHCP报文](#dhcp报文)
 - [DNS](#dns)
   - [DNS 功能](#dns-功能)
+- [DHCP/DNS/VM 综合练习](#dhcpdnsvm-综合练习)
+- [GNS3 IOU镜像](#gns3-iou镜像)
+- [GNS3与docker的关联](#gns3与docker的关联)
 
 
 主机使用动态主机配置协议（`Dynamic Host Configuration Protocol, DHCP`），紧接着加电启动后，收集到包括了 IP 地址、子网掩码及默认网关等初始配置信息。因为所有主机都需要一个 IP 地址，以在 IP 网络中进行通信，而 DHCP 就减轻了手动为每台主机配置一个 IP 地址的管理性负担。
@@ -397,8 +400,9 @@ Ethernet II, Src: Private_66:68:00 (00:50:79:66:68:00), Dst: aa:bb:cc:80:02:00 (
     Type: IPv4 (0x0800)
 Internet Protocol Version 4, Src: 192.168.10.110, Dst: 192.168.10.1
 Internet Control Message Protocol
-
 ```
+> 简单来说，仅仅创立一个vlan（虚拟局域网），那么就只有这个vlan下的几个端口可以相互通信（二层交换，以mac作为通信手段）。这几个端口不能访问到外部，外部也没有路径可以访问到这几个端口。当为vlan配置IP之后，就相当于提供了一个向外部的接口（三层路由，以IP）  
+> 这里的实验把vlan设置为网关，当跨网段通信时，相当于路由功能了。  
 
 -----
 
