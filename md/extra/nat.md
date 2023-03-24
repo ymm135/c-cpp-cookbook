@@ -109,6 +109,8 @@ R1(config-if)#duplex auto
 R1(config-if)#speed auto
 R1(config-if)#no shut
 
+R1(config)#ip route 10.0.1.0 255.255.255.0 10.0.0.1
+
 R1(config-if)#do show ip route
 Codes: C - connected, S - static, R - RIP, M - mobile, B - BGP
        D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area 
@@ -122,6 +124,7 @@ Gateway of last resort is not set
 
      10.0.0.0/8 is variably subnetted, 2 subnets, 2 masks
 C       10.0.0.0/30 is directly connected, FastEthernet0/1
+S       10.0.1.0/24 [1/0] via 10.0.0.1
 C    192.168.0.0/24 is directly connected, FastEthernet0/0
 
 # 增加一条路由
@@ -171,7 +174,4 @@ Gateway of last resort is not set
      10.0.0.0/8 is variably subnetted, 2 subnets, 2 masks
 C       10.0.0.0/30 is directly connected, FastEthernet0/0
 C       10.0.1.0/24 is directly connected, FastEthernet0/1
-
-# 增加路由
-ip route 10.0.1.0 255.255.255.0 10.0.0.1
 ```
