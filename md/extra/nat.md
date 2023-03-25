@@ -66,7 +66,7 @@ Internet Control Message Protocol
 ```
 
 配置SNAT后，请求报文就变成`src ip 10.0.0.2`  
-对应指令`ip route 10.0.1.0 255.255.255.0 10.0.0.1`
+对应指令`ip nat inside source static 192.168.0.2 10.0.0.2`
 ```sh
 Frame 83: 98 bytes on wire (784 bits), 98 bytes captured (784 bits) on interface -, id 0
 Ethernet II, Src: c0:04:09:79:00:01 (c0:04:09:79:00:01), Dst: Private_66:68:01 (00:50:79:66:68:01)
