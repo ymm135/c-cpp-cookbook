@@ -4,7 +4,8 @@
 - [生成Core Dumps](#生成core-dumps)
 - [vscode 查看gdb](#vscode-查看gdb)
 - [Kdump + Crash](#kdump--crash)
-
+  - [安装](#安装)
+  - [测试](#测试)
 
 ## 设置  
 
@@ -225,7 +226,7 @@ md/extra/kdump_arch.png
 Kdump 的功能不仅仅在于分析内核崩溃，在内核学习时，如果我们需了解内核运行状态或结构的详情时，（如果又不想编写内核模块或者使用 gdb 单步调试）也可以使用 Kdump 进行转储，后续使用 Crash 工具对照源码进行分析总结。
 
 
-安装
+### 安装
 ```sh
 $ sudo apt install linux-crashdump
 $ sudo apt install crash
@@ -262,6 +263,21 @@ current state:    ready to kdump
 kexec command:
   /sbin/kexec -p --command-line="BOOT_IMAGE=/vmlinuz-5.4.0-147-generic root=/dev/mapper/ubuntu--vg-ubuntu--lv ro reset_devices systemd.unit=kdump-tools-dump.service nr_cpus=1 irqpoll nousb" --initrd=/var/lib/kdump/initrd.img /var/lib/kdump/vmlinuz
 ```
+
+崩溃信息会保存到:`/var/crash`  
+
+
+### 测试
+Linux `sysrq` 工具可手工触发内核 `panic`，我们可用于临时测试：  
+```sh
+$ sudo echo 1 > /proc/sys/kernel/sysrq
+$ sudo echo c > /proc/sysrq-trigger
+```
+
+命令运行成功后，`/var/carsh` 目录中会生成了一个以当前日期命名的目录，包含 `dmesg.x` 和 `dump.x` 两个文件，其中 `demsg.x` 为崩溃时候的系统内核日志，`dump.x` 文件则为转储的内核快照文件。  
+
+
+
 
 
 
