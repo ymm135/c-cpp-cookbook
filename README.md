@@ -30,3 +30,5 @@
     - #### [机器码转汇编/C](md/extra/transition.md)  
     - #### [Mac Clion + Ubuntu开发](md/extra/clion.md)  
     - #### [Core Dumps ](md/extra/coredump.md)  
+    - #### [perf性能优化](md/extra/perf.md)  
+    - #### [ebpf](md/extra/ebpf.md)  
