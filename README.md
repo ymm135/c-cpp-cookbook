@@ -32,3 +32,4 @@
     - #### [Core Dumps ](md/extra/coredump.md)  
     - #### [perf性能优化](md/extra/perf.md)  
     - #### [ebpf](md/extra/ebpf.md)  
+    - #### [sanitizers工具包/内存泄漏/内存错误](md/extra/sanitizers.md)  
