@@ -27,6 +27,8 @@
     - #### [Hook原理及示例](md/extra/hook-app.md)  
     - #### [漏洞挖掘与利用](md/extra/hole.md)  
   - ### **工具**  
+    - #### [Makefile](md/extra/makefile.md) 
+    - #### [CMake](md/extra/cmake.md) 
     - #### [机器码转汇编/C](md/extra/transition.md)  
     - #### [Mac Clion + Ubuntu开发](md/extra/clion.md)  
     - #### [Core Dumps ](md/extra/coredump.md)  

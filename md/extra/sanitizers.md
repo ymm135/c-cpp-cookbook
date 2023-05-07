@@ -25,7 +25,7 @@ AddressSanitizer is a part of `LLVM` starting with version `3.1` and a part of `
 
 运行启用:  
 ```sh
- make CFLAGS="-g -fsanitize=address" LDFLAGS="-fsanitize=address" 
+make CFLAGS+="-g -fsanitize=address" LDFLAGS+="-fsanitize=address" 
 ```
 
 > `-g` 选项不是必须的  
@@ -95,3 +95,16 @@ Shadow byte legend (one shadow byte represents 8 application bytes):
   Shadow gap:              cc
 ==17594==ABORTING
 ```
+
+问题: `==59647==ASan runtime does not come first in initial library list; you should either link runtime to your application or manually preload it with LD_PRELOAD.`  
+
+增加编译参数:``
+
+这里出现了一个问题,使用ldd查看ELF文件，可以看到`libasan.so.5 => /lib/x86_64-linux-gnu/libasan.so.5 (0x00007f427ecc2000)`, 但是使用`readelf -d`却看不到`libasan`  
+
+
+
+## 网络环境模拟及Bug复现  
+
+
+
