@@ -33,5 +33,6 @@
     - #### [Mac Clion + Ubuntu开发](md/extra/clion.md)  
     - #### [Core Dumps ](md/extra/coredump.md)  
     - #### [perf性能优化](md/extra/perf.md)  
+    - #### [qemu使用及内核调试](md/extra/qemu.md)  
     - #### [ebpf](md/extra/ebpf.md)  
     - #### [sanitizers工具包/内存泄漏/内存错误](md/extra/sanitizers.md)  
