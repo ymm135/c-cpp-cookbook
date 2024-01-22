@@ -67,6 +67,30 @@ $ chmod a+x hello
 $ ./hello
 ```
 
+查看依赖关系:
+```sh
+$ ldd hello
+        linux-vdso.so.1 (0x00007ffd1e504000)
+        libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007f7dcd122000)
+        /lib64/ld-linux-x86-64.so.2 (0x00007f7dcd324000)
+```
+
+查看`libc.so.6`的指向  
+```sh
+$ ll /usr/lib/x86_64-linux-gnu/libc.so.6
+lrwxrwxrwx 1 root root 12 Nov 22 13:32 /usr/lib/x86_64-linux-gnu/libc.so.6 -> libc-2.31.so*
+```
+
+`hello`中记录了依赖库信息，引用的是版本号，不是具体的so文件名称  
+
+```sh
+$ objdump -p hello | grep -i NEEDED
+  NEEDED               libc.so.6
+$  readelf -d hello | grep NEEDED
+ 0x0000000000000001 (NEEDED)             Shared library: [libc.so.6]
+```
+
+
 #### 编译和链接多个源文件
 
 1. 多个文件一起编译
